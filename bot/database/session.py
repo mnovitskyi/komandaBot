@@ -18,12 +18,7 @@ async def init_db():
 
         result = await session.execute(select(Game))
         if not result.scalars().first():
-            session.add_all(
-                [
-                    Game(name="PUBG", max_slots=4),
-                    Game(name="CS", max_slots=5),
-                ]
-            )
+            session.add(Game(name="PUBG", max_slots=4))
             await session.commit()
 
 

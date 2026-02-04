@@ -392,3 +392,220 @@ class TestUserBookings:
 
         assert booking1 is not None
         assert booking2 is not None
+
+
+class TestSlotsInfo:
+    """Tests for slots info functionality."""
+
+    async def test_get_slots_info_for_day(self, db_session, games, time_range):
+        """Test getting slots info for a specific day."""
+        service = BookingService(db_session)
+
+        # Create session and add bookings
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        await service.book(session, 1001, "user1", time_range["time_from"], time_range["time_to"])
+
+        session = await service.get_session_by_id(session.id)
+        await service.book(session, 1002, "user2", time_range["time_from"], time_range["time_to"])
+
+        # Get slots info for saturday
+        slots_info = await service.get_slots_info(123456789, "saturday")
+
+        assert "PUBG" in slots_info
+        assert slots_info["PUBG"] == (2, 4)  # 2 booked, 4 max
+
+    async def test_get_slots_info_no_session(self, db_session, games):
+        """Test getting slots info when no session exists."""
+        service = BookingService(db_session)
+
+        slots_info = await service.get_slots_info(123456789, "saturday")
+
+        assert "PUBG" in slots_info
+        assert slots_info["PUBG"] == (0, 4)  # 0 booked, 4 max
+
+    async def test_get_slots_info_combined_days(self, db_session, games, time_range):
+        """Test getting combined slots info across both days."""
+        service = BookingService(db_session)
+
+        # Create sessions for both days
+        sat_session = await service.create_session(games["pubg"], 123456789, "saturday")
+        await service.book(sat_session, 1001, "user1", time_range["time_from"], time_range["time_to"])
+
+        sun_session = await service.create_session(games["pubg"], 123456789, "sunday")
+        await service.book(sun_session, 1002, "user2", time_range["time_from"], time_range["time_to"])
+        sun_session = await service.get_session_by_id(sun_session.id)
+        await service.book(sun_session, 1003, "user3", time_range["time_from"], time_range["time_to"])
+
+        # Get combined slots info (no day specified)
+        slots_info = await service.get_slots_info(123456789)
+
+        assert "PUBG" in slots_info
+        assert slots_info["PUBG"] == (3, 4)  # 3 total booked across both days
+
+
+class TestMessageFormatting:
+    """Tests for session message formatting."""
+
+    async def test_format_session_message_empty(self, db_session, games):
+        """Test formatting empty session."""
+        service = BookingService(db_session)
+
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        session = await service.get_session_by_id(session.id)
+
+        message = service.format_session_message(session)
+
+        assert "PUBG" in message
+        assert "Субота" in message
+        assert "Поки що немає бронювань" in message
+
+    async def test_format_session_message_with_bookings(self, db_session, games, time_range):
+        """Test formatting session with bookings."""
+        service = BookingService(db_session)
+
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        session_id = session.id  # Store ID before potential expiry
+        await service.book(session, 1001, "user1", time_range["time_from"], time_range["time_to"])
+
+        # Expire cached session to force reload with fresh bookings
+        db_session.expire_all()
+        session = await service.get_session_by_id(session_id)
+        message = service.format_session_message(session)
+
+        assert "@user1" in message
+        assert "18:00-22:00" in message
+        assert "Слоти (1/4)" in message
+
+    async def test_format_session_message_with_waitlist(self, db_session, games, time_range):
+        """Test formatting session with waitlist."""
+        service = BookingService(db_session)
+
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        session_id = session.id  # Store ID before potential expiry
+
+        # Fill all slots and add to waitlist
+        for i in range(5):
+            db_session.expire_all()
+            session = await service.get_session_by_id(session_id)
+            await service.book(session, 1000 + i, f"user{i}", time_range["time_from"], time_range["time_to"])
+
+        db_session.expire_all()
+        session = await service.get_session_by_id(session_id)
+        message = service.format_session_message(session)
+
+        assert "Черга:" in message
+        assert "@user4" in message  # 5th user in waitlist
+
+    async def test_format_session_message_optimal_time(self, db_session, games):
+        """Test formatting session shows optimal time."""
+        from datetime import time
+        service = BookingService(db_session)
+
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        session_id = session.id  # Store ID before potential expiry
+        await service.book(session, 1001, "user1", time(18, 0), time(22, 0))
+
+        db_session.expire_all()
+        session = await service.get_session_by_id(session_id)
+        await service.book(session, 1002, "user2", time(19, 0), time(23, 0))
+
+        db_session.expire_all()
+        session = await service.get_session_by_id(session_id)
+        message = service.format_session_message(session)
+
+        assert "Оптимальний час:" in message
+        assert "19:00-22:00" in message
+
+    async def test_format_session_message_no_common_time(self, db_session, games):
+        """Test formatting session when no common time exists."""
+        from datetime import time
+        service = BookingService(db_session)
+
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        session_id = session.id  # Store ID before potential expiry
+        await service.book(session, 1001, "user1", time(18, 0), time(19, 0))
+
+        db_session.expire_all()
+        session = await service.get_session_by_id(session_id)
+        await service.book(session, 1002, "user2", time(20, 0), time(21, 0))
+
+        db_session.expire_all()
+        session = await service.get_session_by_id(session_id)
+        message = service.format_session_message(session)
+
+        assert "Немає спільного часу" in message
+
+
+class TestGameOperations:
+    """Tests for game-related operations."""
+
+    async def test_get_games(self, db_session, games):
+        """Test getting all games."""
+        service = BookingService(db_session)
+
+        all_games = await service.get_games()
+
+        assert len(all_games) == 1
+        assert all_games[0].name == "PUBG"
+
+
+class TestGroupStats:
+    """Tests for group statistics."""
+
+    async def test_get_group_stats(self, db_session, games, time_range):
+        """Test getting group statistics."""
+        service = BookingService(db_session)
+
+        # Create bookings and play history
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        await service.book(session, 1001, "user1", time_range["time_from"], time_range["time_to"])
+
+        session = await service.get_session_by_id(session.id)
+        await service.book(session, 1002, "user2", time_range["time_from"], time_range["time_to"])
+
+        # Close session to mark as played
+        await service.close_all_sessions(123456789)
+
+        stats = await service.get_group_stats()
+
+        assert len(stats) == 2
+        # Stats should be sorted by played count
+        assert stats[0]["username"] in ["user1", "user2"]
+        assert stats[0]["played"] == 1
+
+
+class TestAllOpenSessions:
+    """Tests for getting all open sessions."""
+
+    async def test_get_all_open_sessions(self, db_session, games):
+        """Test getting all open sessions across chats."""
+        service = BookingService(db_session)
+
+        # Create sessions in different chats
+        await service.create_session(games["pubg"], 111111111, "saturday")
+        await service.create_session(games["pubg"], 222222222, "saturday")
+        await service.create_session(games["pubg"], 111111111, "sunday")
+
+        sessions = await service.get_all_open_sessions()
+
+        assert len(sessions) == 3
+
+
+class TestMessageIdUpdate:
+    """Tests for message ID updates."""
+
+    async def test_update_message_id(self, db_session, games):
+        """Test updating session message ID."""
+        service = BookingService(db_session)
+
+        session = await service.create_session(games["pubg"], 123456789, "saturday")
+        session_id = session.id
+
+        # Update message ID
+        await service.update_message_id(session_id, 999888777)
+
+        # Verify the update
+        db_session.expire_all()
+        updated_session = await service.get_session_by_id(session_id)
+
+        assert updated_session.message_id == 999888777

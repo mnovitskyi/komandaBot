@@ -139,7 +139,7 @@ class BookingService:
         if is_waitlist:
             return BookingResult(
                 success=True,
-                message=f"Ви додані в чергу на позицію {position - max_slots}.",
+                message=f"Пацан, ти в черзі на позиції {position - max_slots}. Чекай, може хтось зіллється!",
                 session=session,
                 booking=booking,
                 is_waitlist=True,
@@ -147,7 +147,7 @@ class BookingService:
 
         return BookingResult(
             success=True,
-            message=f"Ви успішно забронювали слот {position}!",
+            message=f"Красава! Слот {position} твій. Ніколи не здавайся! 💪",
             session=session,
             booking=booking,
         )
@@ -209,7 +209,7 @@ class BookingService:
 
         return BookingResult(
             success=True,
-            message="Ваше бронювання скасовано.",
+            message="Зливаєшся? Ну ок, бронювання скасовано.",
             session=session,
             promoted_user=promoted_user,
         )
@@ -265,7 +265,7 @@ class BookingService:
         await self.session_repo.update_message_id(session_id, message_id)
 
     def format_session_message(self, session: Session) -> str:
-        """Format session message for display."""
+        """Format session message for display (single day)."""
         game = session.game
         day_name = get_day_name(session.day)
         day_date = get_day_date(session.day, session.week_start)
@@ -319,6 +319,78 @@ class BookingService:
 
         return "\n".join(lines)
 
+    def _format_day_section(self, session: Session) -> list[str]:
+        """Format a single day section for the weekly message."""
+        game = session.game
+        day_name = get_day_name(session.day)
+        day_date = get_day_date(session.day, session.week_start)
+        formatted_date = format_date(day_date)
+
+        lines = [f"📅 *{day_name}, {formatted_date}*"]
+
+        # Get confirmed and waitlist bookings
+        confirmed = [b for b in session.bookings if b.status == "confirmed"]
+        waitlist = [b for b in session.bookings if b.status == "waitlist"]
+
+        # Sort by position
+        confirmed.sort(key=lambda b: b.position)
+        waitlist.sort(key=lambda b: b.position)
+
+        # Slots section
+        lines.append(f"Слоти ({len(confirmed)}/{game.max_slots}):")
+        if confirmed:
+            for booking in confirmed:
+                time_range = format_time_range(booking.time_from, booking.time_to)
+                lines.append(f"  {booking.position}. @{booking.username} ({time_range})")
+        else:
+            lines.append("  — немає бронювань")
+
+        # Waitlist section
+        if waitlist:
+            lines.append("Черга:")
+            for i, booking in enumerate(waitlist, start=1):
+                time_range = format_time_range(booking.time_from, booking.time_to)
+                lines.append(f"  {i}. @{booking.username} ({time_range})")
+
+        # Optimal time
+        if confirmed:
+            optimal = calculate_optimal_time(confirmed)
+            if optimal:
+                start, end = optimal
+                lines.append(f"⏰ Час: {format_time(start)}-{format_time(end)}")
+            else:
+                lines.append("⚠️ Немає спільного часу")
+
+        return lines
+
+    def format_weekly_message(
+        self, sat_session: Session | None, sun_session: Session | None
+    ) -> str:
+        """Format combined weekly message showing both Saturday and Sunday."""
+        if not sat_session and not sun_session:
+            return "❌ Немає активних сесій"
+
+        # Get game info from whichever session exists
+        game = (sat_session or sun_session).game
+        status = (sat_session or sun_session).status
+        status_emoji = "🟢" if status == "open" else "🔴"
+        status_text = "Відкрито" if status == "open" else "Закрито"
+
+        lines = [
+            f"🎮 *{game.name}* — Бронювання на вихідні",
+            f"Статус: {status_emoji} {status_text}",
+            "",
+        ]
+
+        if sat_session:
+            lines.extend(self._format_day_section(sat_session))
+            lines.append("")
+
+        if sun_session:
+            lines.extend(self._format_day_section(sun_session))
+
+        return "\n".join(lines)
+
     async def get_user_stats(self, user_id: int) -> dict:
         """Get user statistics."""
         return await self.history_repo.get_user_stats(user_id)
@@ -332,8 +404,8 @@ class BookingService:
         sessions = await self.session_repo.get_open_sessions(chat_id)
 
         for session in sessions:
-            # Mark all confirmed bookings as played
-            confirmed = [b for b in session.bookings if b.status == "confirmed"]
+            # Query confirmed bookings directly from DB to avoid stale relationship data
+            confirmed = await self.booking_repo.get_confirmed(session.id)
             for booking in confirmed:
                 await self.history_repo.add(
                     user_id=booking.user_id,

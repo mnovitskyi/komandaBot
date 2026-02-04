@@ -26,21 +26,28 @@ async def open_booking_sessions(bot: Bot):
         games = await game_repo.get_all()
         week_start = get_week_start()
 
-        # Send announcement
+        # Send announcement (with notification)
         await bot.send_message(
             chat_id=config.chat_id,
-            text="🎮 Бронювання на вихідні відкрито! Обирайте гру та час:",
+            text="🎮 Пацанчики, бронюйте слоти єбашити підарів в PUBG на вихідних!",
         )
 
         for game in games:
-            for day in ["saturday", "sunday"]:
-                session = await service.create_session(
-                    game=game,
-                    chat_id=config.chat_id,
-                    day=day,
-                    week_start=week_start,
-                )
-                await send_session_message(bot, db, session)
+            # Create both sessions first
+            sat_session = await service.create_session(
+                game=game,
+                chat_id=config.chat_id,
+                day="saturday",
+                week_start=week_start,
+            )
+            await service.create_session(
+                game=game,
+                chat_id=config.chat_id,
+                day="sunday",
+                week_start=week_start,
+            )
+            # Send one combined message for both days
+            await send_session_message(bot, db, sat_session)
 
 
 async def close_booking_sessions(bot: Bot):
@@ -54,7 +61,8 @@ async def close_booking_sessions(bot: Bot):
 
         await bot.send_message(
             chat_id=config.chat_id,
-            text="🔒 Бронювання на цей тиждень закрито. Дякуємо всім за гру!",
+            text="🔒 Пацани, бронювання закрито. Дякую що єбашили разом!",
+            disable_notification=True,
         )
 
 

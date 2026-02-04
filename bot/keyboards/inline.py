@@ -5,7 +5,7 @@ from bot.database.models import Game, Session
 
 
 def game_selection_keyboard(
-    games: list[Game], slots_info: dict[str, tuple[int, int]]
+    games: list[Game], slots_info: dict[str, tuple[int, int]], user_id: int
 ) -> InlineKeyboardMarkup:
     """
     Create keyboard for game selection.
@@ -18,73 +18,79 @@ def game_selection_keyboard(
         text = f"{game.name} ({current}/{max_slots})"
         builder.button(
             text=text,
-            callback_data=f"book:game:{game.name.lower()}",
+            callback_data=f"book:game:{game.name.lower()}:{user_id}",
         )
 
     builder.adjust(2)
     return builder.as_markup()
 
 
-def day_selection_keyboard(game: str) -> InlineKeyboardMarkup:
+def day_selection_keyboard(game: str, user_id: int) -> InlineKeyboardMarkup:
     """Create keyboard for day selection."""
     builder = InlineKeyboardBuilder()
 
-    builder.button(text="Субота", callback_data=f"book:day:{game}:saturday")
-    builder.button(text="Неділя", callback_data=f"book:day:{game}:sunday")
-    builder.button(text="« Назад", callback_data="book:back:game")
+    builder.button(text="Субота", callback_data=f"book:day:{game}:saturday:{user_id}")
+    builder.button(text="Неділя", callback_data=f"book:day:{game}:sunday:{user_id}")
+    builder.button(text="❌ Скасувати", callback_data=f"book:close:{user_id}")
 
     builder.adjust(2, 1)
     return builder.as_markup()
 
 
-def time_start_keyboard(game: str, day: str) -> InlineKeyboardMarkup:
+def time_start_keyboard(game: str, day: str, user_id: int) -> InlineKeyboardMarkup:
     """Create keyboard for start time selection."""
     builder = InlineKeyboardBuilder()
 
-    times = [
-        "10:00", "11:00", "12:00", "13:00",
-        "14:00", "15:00", "16:00", "17:00",
-        "18:00", "19:00", "20:00", "21:00", "22:00",
-    ]
-    for t in times:
+    # Generate times from 10:00 to 22:30 with 30-min intervals
+    for h in range(10, 23):
         builder.button(
-            text=t,
-            callback_data=f"book:start:{game}:{day}:{t}",
+            text=f"{h:02d}:00",
+            callback_data=f"book:start:{game}:{day}:{h:02d}:00:{user_id}",
+        )
+        builder.button(
+            text=f"{h:02d}:30",
+            callback_data=f"book:start:{game}:{day}:{h:02d}:30:{user_id}",
         )
 
-    builder.button(text="« Назад", callback_data=f"book:back:day:{game}")
+    builder.button(text="« Назад", callback_data=f"book:back:day:{game}:{user_id}")
 
-    builder.adjust(4, 4, 4, 1, 1)
+    builder.adjust(4)
     return builder.as_markup()
 
 
-def time_end_keyboard(game: str, day: str, start: str) -> InlineKeyboardMarkup:
+def time_end_keyboard(game: str, day: str, start: str, user_id: int) -> InlineKeyboardMarkup:
     """Create keyboard for end time selection."""
     builder = InlineKeyboardBuilder()
 
-    start_hour = int(start.split(":")[0])
+    start_parts = start.split(":")
+    start_hour = int(start_parts[0])
+    start_min = int(start_parts[1])
 
-    # Generate end times: from start+1 to 00:00
-    times = []
-    for h in range(start_hour + 1, 24):
-        times.append(f"{h:02d}:00")
-    times.append("00:00")  # Midnight
+    # Generate end times with 30-min intervals, starting from at least 30 min after start
+    for h in range(start_hour, 24):
+        for m in [0, 30]:
+            # Skip times that are not after the start time
+            if h == start_hour and m <= start_min:
+                continue
+            builder.button(
+                text=f"{h:02d}:{m:02d}",
+                callback_data=f"book:end:{game}:{day}:{start}:{h:02d}:{m:02d}:{user_id}",
+            )
 
-    for t in times:
-        builder.button(
-            text=t,
-            callback_data=f"book:end:{game}:{day}:{start}:{t}",
-        )
+    # Add midnight option
+    builder.button(
+        text="00:00",
+        callback_data=f"book:end:{game}:{day}:{start}:00:00:{user_id}",
+    )
 
-    builder.button(text="« Назад", callback_data=f"book:back:start:{game}:{day}")
+    builder.button(text="« Назад", callback_data=f"book:back:start:{game}:{day}:{user_id}")
 
-    # Adjust layout based on number of buttons
     builder.adjust(4)
     return builder.as_markup()
 
 
 def session_keyboard(session: Session) -> InlineKeyboardMarkup:
-    """Create keyboard for session message."""
+    """Create keyboard for session message (single day)."""
     builder = InlineKeyboardBuilder()
 
     game_name = session.game.name.lower()
@@ -104,6 +110,47 @@ def session_keyboard(session: Session) -> InlineKeyboardMarkup:
     )
 
     builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def weekly_keyboard(
+    sat_session: Session | None, sun_session: Session | None
+) -> InlineKeyboardMarkup:
+    """Create keyboard for combined weekly message."""
+    builder = InlineKeyboardBuilder()
+
+    game_name = (sat_session or sun_session).game.name.lower()
+
+    # Saturday buttons
+    if sat_session:
+        builder.button(
+            text="📝 Субота",
+            callback_data=f"book:quick:{game_name}:saturday",
+        )
+        builder.button(
+            text="❌ Скасувати Сб",
+            callback_data=f"cancel:quick:{game_name}:saturday",
+        )
+
+    # Sunday buttons
+    if sun_session:
+        builder.button(
+            text="📝 Неділя",
+            callback_data=f"book:quick:{game_name}:sunday",
+        )
+        builder.button(
+            text="❌ Скасувати Нд",
+            callback_data=f"cancel:quick:{game_name}:sunday",
+        )
+
+    # Refresh button - use saturday session id as primary
+    primary_session = sat_session or sun_session
+    builder.button(
+        text="🔄 Оновити",
+        callback_data=f"refresh:weekly:{primary_session.id}",
+    )
+
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 

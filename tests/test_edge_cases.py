@@ -11,9 +11,6 @@ from bot.utils.time_utils import (
 )
 
 
-pytestmark = pytest.mark.asyncio
-
-
 class TestTimeEdgeCases:
     """Edge cases for time handling."""
 
@@ -91,6 +88,7 @@ class TestOptimalTimeEdgeCases:
         assert result == (time(11, 0), time(12, 0))
 
 
+@pytest.mark.asyncio
 class TestSlotBoundaries:
     """Tests for slot capacity boundaries."""
 
@@ -145,36 +143,7 @@ class TestSlotBoundaries:
         assert result.is_waitlist is True
         assert result.booking.position == 5
 
-    async def test_cs_has_5_slots(self, db_session, games, time_range):
-        """Test that CS has 5 slots (not 4 like PUBG)."""
-        service = BookingService(db_session)
-
-        session = await service.create_session(games["cs"], 123456789, "saturday")
-
-        # Fill 5 slots for CS
-        for i in range(5):
-            session = await service.get_session_by_id(session.id)
-            result = await service.book(
-                session=session,
-                user_id=1000 + i,
-                username=f"user{i}",
-                time_from=time_range["time_from"],
-                time_to=time_range["time_to"],
-            )
-            assert result.is_waitlist is False
-
-        # 6th should be waitlist
-        session = await service.get_session_by_id(session.id)
-        result = await service.book(
-            session=session,
-            user_id=2000,
-            username="waitlist_user",
-            time_from=time_range["time_from"],
-            time_to=time_range["time_to"],
-        )
-        assert result.is_waitlist is True
-
-
+@pytest.mark.asyncio
 class TestConcurrentOperations:
     """Tests for concurrent-like operations."""
 
@@ -218,6 +187,7 @@ class TestConcurrentOperations:
         assert result2.promoted_user is not None
 
 
+@pytest.mark.asyncio
 class TestDataIntegrity:
     """Tests for data integrity."""
 
@@ -282,6 +252,7 @@ class TestInputValidation:
         pass
 
 
+@pytest.mark.asyncio
 class TestWeekBoundaries:
     """Tests for week boundary handling."""
 

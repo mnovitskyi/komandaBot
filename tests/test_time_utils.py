@@ -171,6 +171,23 @@ class TestCalculateOptimalTime:
         result = calculate_optimal_time(bookings)
         assert result == (time(22, 0), time(23, 0))
 
+    def test_optimal_time_ends_at_midnight(self):
+        """Test when optimal time ends at midnight (all bookings end at 00:00)."""
+
+        class MockBooking:
+            def __init__(self, time_from, time_to, status="confirmed"):
+                self.time_from = time_from
+                self.time_to = time_to
+                self.status = status
+
+        bookings = [
+            MockBooking(time(20, 0), time(0, 0)),  # 20:00-00:00
+            MockBooking(time(22, 0), time(0, 0)),  # 22:00-00:00
+        ]
+        result = calculate_optimal_time(bookings)
+        # Latest start is 22:00, earliest end is 00:00 (midnight)
+        assert result == (time(22, 0), time(0, 0))
+
 
 class TestDayFunctions:
     """Tests for day-related functions."""

@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from bot.database.session import async_session
 from bot.services.booking import BookingService
 from bot.keyboards.inline import (
-    game_selection_keyboard,
+    day_selection_keyboard,
     cancel_selection_keyboard,
 )
 from bot.utils.time_utils import parse_time, get_week_start, is_valid_time_range
@@ -18,12 +18,31 @@ router = Router()
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     """Handle /start command."""
-    await message.reply(
-        "👋 Привіт! Я бот для бронювання ігрових слотів.\n\n"
-        "🎮 Доступні ігри: PUBG (4 слоти), CS (5 слотів)\n\n"
-        "Використовуйте /help для перегляду всіх команд.\n"
-        "Або /book щоб забронювати слот."
+    await _try_delete_message(message)
+    await message.answer(
+        "👋 Пацанчики, я тут для того, щоб ви могли бронювати слоти на PUBG і не їбали один одному мозок в чаті.\n\n"
+        "🎮 *Як це працює:*\n"
+        "• Щочетверга о 18:00 (по пл часі) я відкриваю бронювання на вихідні\n"
+        "• Ви тицяєте /book, обираєте день і час\n"
+        "• Максимум 4 пацани на гру, решта йде в чергу\n"
+        "• За годину до гри я нагадаю шоб не проїбали\n\n"
+        "🔥 *Нахуя це потрібно:*\n"
+        "• Не треба писати в чат \"хто грає?\"\n"
+        "• Видно хто коли може\n"
+        "• Автоматично рахує оптимальний час для всіх\n\n"
+        "/book — забронювати\n"
+        "/help — всі команди",
+        parse_mode="Markdown",
+        disable_notification=True,
     )
+
+
+async def _try_delete_message(message: Message):
+    """Try to delete a message, ignore if no permission."""
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
 
 @router.message(Command("book"))
@@ -34,41 +53,41 @@ async def cmd_book(message: Message):
     async with async_session() as db:
         service = BookingService(db)
 
-        # Quick booking: /book pubg sat 18:00-22:00
-        if len(args) >= 3:
-            game_name = args[0].upper()
-            day_arg = args[1].lower()
-            time_arg = args[2]
+        # Quick booking: /book sat 18:00-22:00
+        if len(args) >= 2:
+            day_arg = args[0].lower()
+            time_arg = args[1]
 
             # Parse day
             day_map = {"sat": "saturday", "sun": "sunday", "субота": "saturday", "неділя": "sunday"}
             day = day_map.get(day_arg)
             if not day:
-                await message.reply("❌ Невірний день. Використовуйте: sat/sun або субота/неділя")
+                reply = await message.reply("❌ Невірний день. Використовуйте: sat/sun або субота/неділя")
+                await _try_delete_message(message)
                 return
 
             # Parse time
             time_match = re.match(r"(\d{1,2}:\d{2})-(\d{1,2}:\d{2})", time_arg)
             if not time_match:
-                await message.reply("❌ Невірний формат часу. Використовуйте: HH:MM-HH:MM")
+                reply = await message.reply("❌ Невірний формат часу. Використовуйте: HH:MM-HH:MM")
+                await _try_delete_message(message)
                 return
 
             time_from = parse_time(time_match.group(1))
             time_to = parse_time(time_match.group(2))
 
             if not time_from or not time_to:
-                await message.reply("❌ Невірний формат часу.")
+                reply = await message.reply("❌ Невірний формат часу.")
+                await _try_delete_message(message)
                 return
 
             if not is_valid_time_range(time_from, time_to):
-                await message.reply("❌ Час закінчення має бути після часу початку.")
+                reply = await message.reply("❌ Час закінчення має бути після часу початку.")
+                await _try_delete_message(message)
                 return
 
-            # Get game
-            game = await service.get_game(game_name)
-            if not game:
-                await message.reply(f"❌ Гру '{game_name}' не знайдено.")
-                return
+            # Get PUBG (only game)
+            game = await service.get_game("PUBG")
 
             # Get existing session (booking must be open)
             session = await service.get_session(
@@ -77,10 +96,11 @@ async def cmd_book(message: Message):
                 day=day,
             )
             if not session:
-                await message.reply(
+                reply = await message.reply(
                     "❌ Бронювання ще не відкрито.\n"
-                    "Бронювання відкривається щочетверга о 18:00."
+                    "Бронювання відкривається щочетверга о 18:00 (по пл часі)."
                 )
+                await _try_delete_message(message)
                 return
 
             # Create booking
@@ -93,30 +113,36 @@ async def cmd_book(message: Message):
                 time_to=time_to,
             )
 
+            # Delete command message first
+            await _try_delete_message(message)
+
             if result.success:
-                await message.reply(f"✅ {result.message}")
+                # Just update the session message, user sees the result there
                 await send_session_message(message.bot, db, result.session)
             else:
-                await message.reply(f"❌ {result.message}")
+                # Show error briefly
+                await message.answer(f"❌ {result.message}")
 
             return
 
         # Check if any sessions are open
         open_sessions = await service.get_open_sessions(message.chat.id)
         if not open_sessions:
-            await message.reply(
+            reply = await message.reply(
                 "❌ Бронювання ще не відкрито.\n"
-                "Бронювання відкривається щочетверга о 18:00."
+                "Бронювання відкривається щочетверга о 18:00 (по пл часі)."
             )
+            await _try_delete_message(message)
             return
 
-        # Show game selection menu
-        games = await service.get_games()
-        slots_info = await service.get_slots_info(message.chat.id)
+        # Delete command message
+        await _try_delete_message(message)
 
-        await message.reply(
-            "🎮 Оберіть гру:",
-            reply_markup=game_selection_keyboard(games, slots_info),
+        # Skip game selection since we only have PUBG
+        await message.answer(
+            "📅 Оберіть день:",
+            reply_markup=day_selection_keyboard("pubg", message.from_user.id),
+            disable_notification=True,
         )
 
 
@@ -128,22 +154,20 @@ async def cmd_cancel(message: Message):
     async with async_session() as db:
         service = BookingService(db)
 
-        # Quick cancel: /cancel pubg sat
-        if len(args) >= 2:
-            game_name = args[0].upper()
-            day_arg = args[1].lower()
+        # Quick cancel: /cancel sat
+        if len(args) >= 1:
+            day_arg = args[0].lower()
 
             day_map = {"sat": "saturday", "sun": "sunday", "субота": "saturday", "неділя": "sunday"}
             day = day_map.get(day_arg)
 
             if not day:
                 await message.reply("❌ Невірний день.")
+                await _try_delete_message(message)
                 return
 
-            game = await service.get_game(game_name)
-            if not game:
-                await message.reply(f"❌ Гру '{game_name}' не знайдено.")
-                return
+            # Get PUBG (only game)
+            game = await service.get_game("PUBG")
 
             session = await service.get_session(
                 game=game,
@@ -152,6 +176,7 @@ async def cmd_cancel(message: Message):
             )
             if not session:
                 await message.reply("❌ Немає активних сесій для скасування.")
+                await _try_delete_message(message)
                 return
 
             username = message.from_user.username or message.from_user.first_name
@@ -161,8 +186,11 @@ async def cmd_cancel(message: Message):
                 username=username,
             )
 
+            # Delete command message
+            await _try_delete_message(message)
+
             if result.success:
-                await message.reply(f"✅ {result.message}")
+                # Just update the session message
                 await send_session_message(message.bot, db, result.session)
 
                 if result.promoted_user:
@@ -171,7 +199,7 @@ async def cmd_cancel(message: Message):
                         message.bot, message.chat.id, user_id, promoted_username
                     )
             else:
-                await message.reply(f"❌ {result.message}")
+                await message.answer(f"❌ {result.message}")
 
             return
 
@@ -181,104 +209,125 @@ async def cmd_cancel(message: Message):
         )
 
         if not user_bookings:
-            await message.reply("У вас немає активних бронювань.")
+            await message.reply("❌ У вас немає активних бронювань.")
+            await _try_delete_message(message)
             return
 
-        await message.reply(
+        # Delete command message
+        await _try_delete_message(message)
+
+        await message.answer(
             "Оберіть бронювання для скасування:",
             reply_markup=cancel_selection_keyboard(user_bookings),
+            disable_notification=True,
         )
 
 
 @router.message(Command("status"))
 async def cmd_status(message: Message):
     """Handle /status command - show all open sessions."""
+    # Delete command message
+    await _try_delete_message(message)
+
     async with async_session() as db:
         service = BookingService(db)
         sessions = await service.get_open_sessions(message.chat.id)
 
         if not sessions:
-            await message.reply(
+            await message.answer(
                 "Немає активних сесій бронювання.\n"
-                "Бронювання відкривається щочетверга о 18:00."
+                "Бронювання відкривається щочетверга о 18:00 (по пл часі)."
             )
             return
 
+        # Group by game and send one combined message per game
+        seen_games = set()
         for session in sessions:
-            await send_session_message(message.bot, db, session)
+            if session.game.id not in seen_games:
+                seen_games.add(session.game.id)
+                await send_session_message(message.bot, db, session)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     """Handle /help command."""
+    # Delete command message
+    await _try_delete_message(message)
+
     help_text = """
-🎮 *Команда Лайна — Бот для бронювання*
+🎮 *Бот, щоб пацанчики могли бронювати слоти на вихідні для PUBG*
 
 *Команди:*
-• `/book` — Інтерактивне меню бронювання
-• `/book pubg sat 18:00-22:00` — Швидке бронювання
-• `/cancel` — Скасувати бронювання (меню)
-• `/cancel pubg sat` — Швидке скасування
-• `/status` — Показати поточні бронювання
-• `/mystats` — Ваша статистика
-• `/stats` — Статистика групи
+• `/book` — Забронювати слот
+• `/book sat 18:00-22:00` — Швидке бронювання
+• `/cancel` — Скасувати бронювання
+• `/cancel sat` — Швидке скасування
+• `/status` — Хто грає
+• `/mystats` — Твоя статистика
+• `/stats` — Статистика пацанів
 • `/help` — Ця довідка
 
-*Адмін команди:*
-• `/open` — Відкрити бронювання вручну
-• `/close` — Закрити всі сесії
-
-*Ігри:*
-• PUBG — 4 слоти
-• CS — 5 слотів
+*Адмін:*
+• `/open` — Відкрити бронювання
+• `/close` — Закрити бронювання
 
 *Дні:*
 • sat / субота — Субота
 • sun / неділя — Неділя
 
-*Формат часу:*
-• HH:MM-HH:MM (наприклад, 18:00-22:00)
+*Час:*
+• HH:MM-HH:MM (напр. 18:00-22:00)
+• Часовий пояс: Europe/Warsaw 🇵🇱
 
-*Автоматичні події:*
-• Четвер 18:00 — Відкриття бронювання
-• Неділя 23:00 — Закриття бронювання
-• За 1 годину до гри — Нагадування
+*Автоматика (по пл часі):*
+• Четвер 18:00 — Відкриття
+• Неділя 23:00 — Закриття
+• За 1 год до гри — Нагадування
+
+Єбаште і ніколи не здавайтесь!
 """
-    await message.reply(help_text, parse_mode="Markdown")
+    await message.answer(help_text, parse_mode="Markdown", disable_notification=True)
 
 
 @router.message(Command("chatid"))
 async def cmd_chatid(message: Message):
     """Handle /chatid command - show current chat ID."""
-    await message.reply(f"Chat ID: `{message.chat.id}`", parse_mode="Markdown")
+    await _try_delete_message(message)
+    await message.answer(f"Chat ID: `{message.chat.id}`", parse_mode="Markdown")
 
 
 @router.message(Command("open"))
 async def cmd_open(message: Message):
     """Admin command to manually open booking sessions."""
+    await _try_delete_message(message)
+
     async with async_session() as db:
         service = BookingService(db)
         games = await service.get_games()
 
-        await message.reply("🎮 Відкриваю бронювання на вихідні...")
-
         for game in games:
-            for day in ["saturday", "sunday"]:
-                session = await service.create_session(
-                    game=game,
-                    chat_id=message.chat.id,
-                    day=day,
-                )
-                await send_session_message(message.bot, db, session)
-
-        await message.reply("✅ Бронювання відкрито!")
+            # Create both sessions first
+            sat_session = await service.create_session(
+                game=game,
+                chat_id=message.chat.id,
+                day="saturday",
+            )
+            await service.create_session(
+                game=game,
+                chat_id=message.chat.id,
+                day="sunday",
+            )
+            # Send one combined message (using saturday session as reference)
+            await send_session_message(message.bot, db, sat_session)
 
 
 @router.message(Command("close"))
 async def cmd_close(message: Message):
     """Admin command to manually close all booking sessions."""
+    await _try_delete_message(message)
+
     async with async_session() as db:
         service = BookingService(db)
         await service.close_all_sessions(message.chat.id)
 
-        await message.reply("🔒 Всі сесії бронювання закрито.")
+        await message.answer("🔒 Всі сесії бронювання закрито.")

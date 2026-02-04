@@ -79,7 +79,6 @@ def upgrade() -> None:
 
     # Seed default games
     op.execute("INSERT INTO games (name, max_slots) VALUES ('PUBG', 4)")
-    op.execute("INSERT INTO games (name, max_slots) VALUES ('CS', 5)")
 
 
 def downgrade() -> None:

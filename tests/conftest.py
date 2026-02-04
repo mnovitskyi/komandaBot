@@ -43,12 +43,10 @@ async def db_session(db_engine):
 async def games(db_session: AsyncSession):
     """Create test games."""
     pubg = Game(name="PUBG", max_slots=4)
-    cs = Game(name="CS", max_slots=5)
-    db_session.add_all([pubg, cs])
+    db_session.add(pubg)
     await db_session.commit()
     await db_session.refresh(pubg)
-    await db_session.refresh(cs)
-    return {"pubg": pubg, "cs": cs}
+    return {"pubg": pubg}
 
 
 @pytest_asyncio.fixture
