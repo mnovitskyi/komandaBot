@@ -59,7 +59,41 @@ TIMEZONE=Europe/Warsaw
 python3 -m bot.main
 ```
 
-## Деплой на Railway
+## Деплой
+
+### Vercel (Рекомендовано) — Безкоштовно
+
+Використовує webhook режим. [Докладна інструкція](DEPLOYMENT.md)
+
+**Швидкий старт:**
+```bash
+# 1. Встановіть Vercel CLI
+npm i -g vercel
+
+# 2. Deploy
+vercel
+
+# 3. Встановіть webhook
+python scripts/set_webhook.py https://your-app.vercel.app
+```
+
+**Налаштуйте змінні середовища в Vercel Dashboard:**
+- `BOT_TOKEN` — токен від @BotFather
+- `DATABASE_URL` — PostgreSQL з'єднання (Supabase/Neon)
+- `CHAT_ID` — ID вашого чату
+- `TIMEZONE` — Europe/Warsaw
+- `CRON_SECRET` — секрет для cron ендпоінтів (опційно)
+
+**Налаштування scheduler через cron-job.org:**
+1. Зареєструйтесь на [cron-job.org](https://cron-job.org)
+2. Створіть задачі:
+   - Відкрити сесії: `https://your-app.vercel.app/api/cron?task=open_sessions&secret=YOUR_SECRET` (Четвер, 18:00)
+   - Нагадування: `https://your-app.vercel.app/api/cron?task=send_reminders&secret=YOUR_SECRET` (Субота/Неділя за годину до гри)
+   - Закрити сесії: `https://your-app.vercel.app/api/cron?task=close_sessions&secret=YOUR_SECRET` (Неділя, 23:00)
+
+### Railway (Альтернатива) — $5/міс після trial
+
+Зберігає polling режим зі scheduler. Не потрібні зовнішні cron сервіси.
 
 1. Створіть акаунт на [railway.app](https://railway.app)
 

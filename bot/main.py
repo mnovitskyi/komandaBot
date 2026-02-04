@@ -10,6 +10,7 @@ from bot.config import config
 from bot.database.session import init_db
 from bot.handlers import booking, stats, callbacks
 from bot.services.scheduler import setup_scheduler, shutdown_scheduler
+from bot.middlewares import ChatFilterMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -36,6 +37,10 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
+
+    # Add middleware to restrict to specific chat only
+    dp.message.middleware(ChatFilterMiddleware())
+    dp.callback_query.middleware(ChatFilterMiddleware())
 
     # Register handlers
     dp.include_router(booking.router)

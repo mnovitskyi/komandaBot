@@ -11,6 +11,7 @@ from bot.keyboards.inline import (
 )
 from bot.utils.time_utils import parse_time, get_week_start, is_valid_time_range
 from bot.services.notifications import send_session_message, notify_promoted_user
+from bot.config import config
 
 router = Router()
 
@@ -31,7 +32,20 @@ async def cmd_start(message: Message):
         "• Видно хто коли може\n"
         "• Автоматично рахує оптимальний час для всіх\n\n"
         "/book — забронювати\n"
-        "/help — всі команди",
+        "/help — всі команди\n"
+        f"/myid — твій ID ({message.from_user.id})",
+        parse_mode="Markdown",
+        disable_notification=True,
+    )
+
+
+@router.message(Command("myid"))
+async def cmd_myid(message: Message):
+    """Show user's Telegram ID."""
+    await _try_delete_message(message)
+    await message.answer(
+        f"🆔 Твій Telegram ID: `{message.from_user.id}`\n"
+        f"Username: @{message.from_user.username or 'не вказано'}",
         parse_mode="Markdown",
         disable_notification=True,
     )
@@ -270,6 +284,7 @@ async def cmd_help(message: Message):
 *Адмін:*
 • `/open` — Відкрити бронювання
 • `/close` — Закрити бронювання
+• `/remove @username day` — Видалити бронювання
 
 *Дні:*
 • sat / субота — Субота
@@ -331,3 +346,88 @@ async def cmd_close(message: Message):
         await service.close_all_sessions(message.chat.id)
 
         await message.answer("🔒 Всі сесії бронювання закрито.")
+
+
+@router.message(Command("remove"))
+async def cmd_remove(message: Message):
+    """Admin command to remove someone from the queue.
+    Usage: /remove @username saturday or /remove @username sunday
+    """
+    await _try_delete_message(message)
+    
+    # Check if user is admin
+    if message.from_user.id not in config.admin_ids:
+        await message.answer("❌ Тільки адміни можуть видаляти броні.", disable_notification=True)
+        return
+    
+    # Parse command: /remove @username day
+    parts = message.text.split()
+    if len(parts) != 3:
+        await message.answer(
+            "❌ Неправильний формат. Використовуй:\n"
+            "/remove @username saturday\n"
+            "або\n"
+            "/remove @username sunday",
+            disable_notification=True
+        )
+        return
+    
+    username = parts[1].lstrip("@")
+    day = parts[2].lower()
+    
+    if day not in ["saturday", "sunday"]:
+        await message.answer("❌ День має бути 'saturday' або 'sunday'", disable_notification=True)
+        return
+    
+    async with async_session() as db:
+        service = BookingService(db)
+        week_start = get_week_start()
+        
+        # Get the session for this day
+        session = await service.get_or_create_session(
+            chat_id=message.chat.id,
+            day=day,
+            week_start=week_start
+        )
+        
+        if not session:
+            await message.answer(f"❌ Сесія для {day} не знайдена.", disable_notification=True)
+            return
+        
+        # Find and cancel the booking
+        booking_cancelled = False
+        promoted_user = None
+        
+        for booking in session.bookings:
+            if booking.username.lower() == username.lower() and booking.status in ["confirmed", "waitlist"]:
+                old_status = booking.status
+                booking.status = "cancelled"
+                await db.commit()
+                booking_cancelled = True
+                
+                # If it was confirmed, promote someone from waitlist
+                if old_status == "confirmed":
+                    promoted_user = await service.promote_from_waitlist(session.id)
+                
+                break
+        
+        if not booking_cancelled:
+            await message.answer(
+                f"❌ Активне бронювання для @{username} на {day} не знайдено.",
+                disable_notification=True
+            )
+            return
+        
+        # Update the session message
+        await send_session_message(message.bot, db, session)
+        
+        # Notify the removed user
+        day_name = "суботу" if day == "saturday" else "неділю"
+        await message.answer(
+            f"✅ Бронювання @{username} на {day_name} видалено адміном.",
+            disable_notification=True
+        )
+        
+        # Notify promoted user if any
+        if promoted_user:
+            await notify_promoted_user(message.bot, promoted_user, session)

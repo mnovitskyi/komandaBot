@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.database.models import Session
 from bot.database.session import async_session
-from bot.services.booking import BookingService
+from bot.services.booking import BookingService, escape_markdown
 from bot.keyboards.inline import session_keyboard, weekly_keyboard
 
 
@@ -77,9 +77,10 @@ async def send_session_message(
 
 async def notify_promoted_user(bot: Bot, chat_id: int, user_id: int, username: str):
     """Notify user that they've been promoted from waitlist."""
+    escaped_username = escape_markdown(username)
     await bot.send_message(
         chat_id=chat_id,
-        text=f"🎉 @{username}, пацан, ти в грі! Хтось злився і тепер ти єбашиш з нами!",
+        text=f"🎉 @{escaped_username}, пацан, ти в грі! Хтось злився і тепер ти єбашиш з нами!",
         disable_notification=True,
     )
 
@@ -90,7 +91,7 @@ async def send_reminder(bot: Bot, session: Session, minutes_before: int = 60):
     if not confirmed:
         return
 
-    mentions = " ".join(f"@{b.username}" for b in confirmed)
+    mentions = " ".join(f"@{escape_markdown(b.username)}" for b in confirmed)
 
     await bot.send_message(
         chat_id=session.chat_id,

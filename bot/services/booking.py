@@ -20,6 +20,14 @@ from bot.utils.time_utils import (
 )
 
 
+def escape_markdown(text: str) -> str:
+    """Escape special characters for Telegram Markdown."""
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
+
 @dataclass
 class BookingResult:
     success: bool
@@ -293,7 +301,8 @@ class BookingService:
         if confirmed:
             for booking in confirmed:
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                lines.append(f"{booking.position}. @{booking.username} ({time_range})")
+                escaped_username = escape_markdown(booking.username)
+                lines.append(f"{booking.position}. @{escaped_username} ({time_range})")
         else:
             lines.append("— Поки що немає бронювань")
 
@@ -303,8 +312,9 @@ class BookingService:
             lines.append("⏳ Черга:")
             for i, booking in enumerate(waitlist, start=1):
                 time_range = format_time_range(booking.time_from, booking.time_to)
+                escaped_username = escape_markdown(booking.username)
                 lines.append(
-                    f"{game.max_slots + i}. @{booking.username} ({time_range})"
+                    f"{game.max_slots + i}. @{escaped_username} ({time_range})"
                 )
 
         # Optimal time
@@ -341,7 +351,8 @@ class BookingService:
         if confirmed:
             for booking in confirmed:
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                lines.append(f"  {booking.position}. @{booking.username} ({time_range})")
+                escaped_username = escape_markdown(booking.username)
+                lines.append(f"  {booking.position}. @{escaped_username} ({time_range})")
         else:
             lines.append("  — немає бронювань")
 
@@ -350,7 +361,8 @@ class BookingService:
             lines.append("Черга:")
             for i, booking in enumerate(waitlist, start=1):
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                lines.append(f"  {i}. @{booking.username} ({time_range})")
+                escaped_username = escape_markdown(booking.username)
+                lines.append(f"  {i}. @{escaped_username} ({time_range})")
 
         # Optimal time
         if confirmed:
