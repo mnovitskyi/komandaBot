@@ -8,7 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 
 from bot.config import config
 from bot.database.session import init_db
-from bot.handlers import booking, stats, callbacks
+from bot.handlers import booking, stats, callbacks, ai_chat
 from bot.services.scheduler import setup_scheduler, shutdown_scheduler
 from bot.middlewares import ChatFilterMiddleware
 
@@ -46,6 +46,7 @@ async def main():
     dp.include_router(booking.router)
     dp.include_router(stats.router)
     dp.include_router(callbacks.router)
+    dp.include_router(ai_chat.router)  # AI chat handler — must be last (catch-all)
 
     # Setup scheduler
     setup_scheduler(bot)

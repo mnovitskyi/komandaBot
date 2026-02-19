@@ -13,6 +13,7 @@ from bot.keyboards.inline import (
 )
 from bot.utils.time_utils import parse_time, get_day_name, is_valid_time_range
 from bot.services.notifications import send_session_message, notify_promoted_user
+from bot.services.ai_chat import ai_service
 
 router = Router()
 
@@ -133,6 +134,16 @@ async def callback_select_end(callback: CallbackQuery):
         if result.success:
             await callback.answer(f"✅ {result.message}", show_alert=True)
             await send_session_message(callback.bot, db, result.session)
+
+            # AI reaction to booking
+            if ai_service:
+                first_name = callback.from_user.first_name or ""
+                reaction = await ai_service.generate_event_reaction(
+                    "booked", username, first_name,
+                    f"Гра: {game_name}, день: {get_day_name(day)}, час: {start}-{end}",
+                )
+                if reaction:
+                    await callback.message.answer(reaction, disable_notification=True)
         else:
             await callback.answer(f"❌ {result.message}", show_alert=True)
 
@@ -312,6 +323,16 @@ async def callback_edit_end(callback: CallbackQuery):
         if result.success:
             await callback.answer(f"✅ {result.message}", show_alert=True)
             await send_session_message(callback.bot, db, result.session)
+
+            # AI reaction to edit
+            if ai_service:
+                first_name = callback.from_user.first_name or ""
+                reaction = await ai_service.generate_event_reaction(
+                    "edited", username, first_name,
+                    f"Новий час: {start}-{end}",
+                )
+                if reaction:
+                    await callback.message.answer(reaction, disable_notification=True)
         else:
             await callback.answer(f"❌ {result.message}", show_alert=True)
 
@@ -427,6 +448,15 @@ async def callback_cancel_yes(callback: CallbackQuery):
                 await notify_promoted_user(
                     callback.bot, callback.message.chat.id, user_id, promoted_username
                 )
+
+            # AI reaction to cancellation
+            if ai_service:
+                first_name = callback.from_user.first_name or ""
+                reaction = await ai_service.generate_event_reaction(
+                    "cancelled", username, first_name,
+                )
+                if reaction:
+                    await callback.message.answer(reaction, disable_notification=True)
         else:
             await callback.answer(f"❌ {result.message}", show_alert=True)
 
