@@ -7,6 +7,8 @@ from bot.keyboards.inline import (
     day_selection_keyboard,
     time_start_keyboard,
     time_end_keyboard,
+    edit_time_start_keyboard,
+    edit_time_end_keyboard,
     confirm_cancel_keyboard,
 )
 from bot.utils.time_utils import parse_time, get_day_name, is_valid_time_range
@@ -171,7 +173,17 @@ async def callback_quick_book(callback: CallbackQuery):
         existing = await booking_repo.get_user_booking(session.id, callback.from_user.id)
 
         if existing:
-            await callback.answer("❌ Ви вже маєте бронювання на цю сесію", show_alert=True)
+            from bot.utils.time_utils import format_time_range
+            current_time = format_time_range(existing.time_from, existing.time_to)
+            await callback.message.answer(
+                f"✏️ Ваше поточне бронювання: {current_time}\n"
+                "Оберіть новий час початку:",
+                reply_markup=edit_time_start_keyboard(
+                    game_name.lower(), day, callback.from_user.id
+                ),
+                disable_notification=True,
+            )
+            await callback.answer()
             return
 
     # Send time selection as a new message (will be deleted after booking)
@@ -227,6 +239,104 @@ async def callback_back(callback: CallbackQuery):
             reply_markup=time_start_keyboard(game, day, callback.from_user.id),
         )
 
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit:start:"))
+async def callback_edit_start(callback: CallbackQuery):
+    """Handle edit start time selection."""
+    parts = callback.data.split(":")
+    game = parts[2]
+    day = parts[3]
+    start = f"{parts[4]}:{parts[5]}"
+    expected_user_id = int(parts[6])
+
+    if callback.from_user.id != expected_user_id:
+        await callback.answer("❌ Це не ваше бронювання", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        f"✏️ Новий початок: {start}\nОберіть час закінчення:",
+        reply_markup=edit_time_end_keyboard(game, day, start, callback.from_user.id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit:end:"))
+async def callback_edit_end(callback: CallbackQuery):
+    """Handle edit end time selection - complete edit."""
+    parts = callback.data.split(":")
+    game_name = parts[2].upper()
+    day = parts[3]
+    start = f"{parts[4]}:{parts[5]}"
+    end = f"{parts[6]}:{parts[7]}"
+    expected_user_id = int(parts[8])
+
+    if callback.from_user.id != expected_user_id:
+        await callback.answer("❌ Це не ваше бронювання", show_alert=True)
+        return
+
+    time_from = parse_time(start)
+    time_to = parse_time(end)
+
+    if not time_from or not time_to or not is_valid_time_range(time_from, time_to):
+        await callback.answer("❌ Невірний діапазон часу", show_alert=True)
+        return
+
+    async with async_session() as db:
+        service = BookingService(db)
+        game = await service.get_game(game_name)
+
+        if not game:
+            await callback.answer("❌ Гру не знайдено", show_alert=True)
+            return
+
+        session = await service.get_session(
+            game=game,
+            chat_id=callback.message.chat.id,
+            day=day,
+        )
+        if not session:
+            await callback.answer("❌ Сесію не знайдено", show_alert=True)
+            return
+
+        username = callback.from_user.username or callback.from_user.first_name
+        result = await service.edit_booking(
+            session=session,
+            user_id=callback.from_user.id,
+            username=username,
+            time_from=time_from,
+            time_to=time_to,
+        )
+
+        if result.success:
+            await callback.answer(f"✅ {result.message}", show_alert=True)
+            await send_session_message(callback.bot, db, result.session)
+        else:
+            await callback.answer(f"❌ {result.message}", show_alert=True)
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("edit:back:"))
+async def callback_edit_back(callback: CallbackQuery):
+    """Handle back navigation within edit flow."""
+    parts = callback.data.split(":")
+    expected_user_id = int(parts[-1])
+
+    if callback.from_user.id != expected_user_id:
+        await callback.answer("❌ Це не ваше бронювання", show_alert=True)
+        return
+
+    game = parts[3]
+    day = parts[4]
+    await callback.message.edit_text(
+        "✏️ Оберіть новий час початку:",
+        reply_markup=edit_time_start_keyboard(game, day, callback.from_user.id),
+    )
     await callback.answer()
 
 

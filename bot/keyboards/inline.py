@@ -154,6 +154,54 @@ def weekly_keyboard(
     return builder.as_markup()
 
 
+def edit_time_start_keyboard(game: str, day: str, user_id: int) -> InlineKeyboardMarkup:
+    """Create keyboard for edit start time selection."""
+    builder = InlineKeyboardBuilder()
+
+    for h in range(10, 23):
+        builder.button(
+            text=f"{h:02d}:00",
+            callback_data=f"edit:start:{game}:{day}:{h:02d}:00:{user_id}",
+        )
+        builder.button(
+            text=f"{h:02d}:30",
+            callback_data=f"edit:start:{game}:{day}:{h:02d}:30:{user_id}",
+        )
+
+    builder.button(text="❌ Скасувати", callback_data=f"book:close:{user_id}")
+
+    builder.adjust(4)
+    return builder.as_markup()
+
+
+def edit_time_end_keyboard(game: str, day: str, start: str, user_id: int) -> InlineKeyboardMarkup:
+    """Create keyboard for edit end time selection."""
+    builder = InlineKeyboardBuilder()
+
+    start_parts = start.split(":")
+    start_hour = int(start_parts[0])
+    start_min = int(start_parts[1])
+
+    for h in range(start_hour, 24):
+        for m in [0, 30]:
+            if h == start_hour and m <= start_min:
+                continue
+            builder.button(
+                text=f"{h:02d}:{m:02d}",
+                callback_data=f"edit:end:{game}:{day}:{start}:{h:02d}:{m:02d}:{user_id}",
+            )
+
+    builder.button(
+        text="00:00",
+        callback_data=f"edit:end:{game}:{day}:{start}:00:00:{user_id}",
+    )
+
+    builder.button(text="« Назад", callback_data=f"edit:back:start:{game}:{day}:{user_id}")
+
+    builder.adjust(4)
+    return builder.as_markup()
+
+
 def cancel_selection_keyboard(
     user_bookings: list[tuple[Session, str]]
 ) -> InlineKeyboardMarkup:

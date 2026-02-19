@@ -3,7 +3,7 @@ from aiogram.types import Message
 from aiogram.filters import Command
 
 from bot.database.session import async_session
-from bot.services.booking import BookingService
+from bot.services.booking import BookingService, format_user_mention
 
 router = Router()
 
@@ -34,11 +34,12 @@ async def cmd_mystats(message: Message):
             await message.answer("📊 У вас ще немає статистики. Забронюйте свою першу гру!")
             return
 
-        display_name = _escape_markdown(
-            message.from_user.username or message.from_user.first_name
+        mention = format_user_mention(
+            message.from_user.username or message.from_user.first_name,
+            message.from_user.id,
         )
         lines = [
-            f"📊 *Статистика @{display_name}*",
+            f"📊 *Статистика {mention}*",
             "",
             f"🎮 Всього бронювань: {stats['total_bookings']}",
             f"✅ Зіграно: {stats['total_played']}",
@@ -92,9 +93,9 @@ async def cmd_stats(message: Message):
             elif i == 3:
                 medal = "🥉 "
 
-            username = _escape_markdown(player['username'])
+            mention = format_user_mention(player['username'], player['user_id'])
             lines.append(
-                f"{medal}{i}. @{username}: {player['played']} ігор"
+                f"{medal}{i}. {mention}: {player['played']} ігор"
             )
 
         # Most cancellations (shame list)
@@ -105,9 +106,9 @@ async def cmd_stats(message: Message):
             lines.append("")
             lines.append("😅 *Найбільше скасувань:*")
             for player in top_cancellers:
-                username = _escape_markdown(player['username'])
+                mention = format_user_mention(player['username'], player['user_id'])
                 lines.append(
-                    f"• @{username}: {player['cancelled']} скасувань"
+                    f"• {mention}: {player['cancelled']} скасувань"
                 )
 
         await message.answer("\n".join(lines), parse_mode="Markdown")

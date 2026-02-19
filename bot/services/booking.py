@@ -28,6 +28,12 @@ def escape_markdown(text: str) -> str:
     return text
 
 
+def format_user_mention(username: str, user_id: int) -> str:
+    """Format a user mention that links to the correct Telegram user by ID."""
+    escaped = escape_markdown(username)
+    return f"[{escaped}](tg://user?id={user_id})"
+
+
 @dataclass
 class BookingResult:
     success: bool
@@ -117,9 +123,10 @@ class BookingService:
         # Get next position
         position = await self.booking_repo.get_next_position(session.id)
 
-        # Determine status based on position
+        # Determine status based on confirmed count (not position)
         max_slots = session.game.max_slots
-        is_waitlist = position > max_slots
+        confirmed = await self.booking_repo.get_confirmed(session.id)
+        is_waitlist = len(confirmed) >= max_slots
         status = "waitlist" if is_waitlist else "confirmed"
 
         # Create booking
@@ -222,6 +229,43 @@ class BookingService:
             promoted_user=promoted_user,
         )
 
+    async def edit_booking(
+        self,
+        session: Session,
+        user_id: int,
+        username: str,
+        time_from: time,
+        time_to: time,
+    ) -> BookingResult:
+        """Edit booking times without affecting cancellation stats."""
+        booking = await self.booking_repo.get_user_booking(session.id, user_id)
+        if not booking:
+            return BookingResult(
+                success=False,
+                message="У вас немає бронювання на цю сесію.",
+                session=session,
+            )
+
+        await self.booking_repo.update_booking_times(
+            booking.id, time_from, time_to
+        )
+
+        await self.history_repo.add(
+            user_id=user_id,
+            username=username,
+            game=session.game.name,
+            action="edited",
+        )
+
+        session = await self.session_repo.get_by_id(session.id)
+
+        return BookingResult(
+            success=True,
+            message="Час бронювання оновлено! 👌",
+            session=session,
+            booking=booking,
+        )
+
     async def get_user_bookings(
         self, chat_id: int, user_id: int
     ) -> list[tuple[Session, str]]:
@@ -301,8 +345,8 @@ class BookingService:
         if confirmed:
             for booking in confirmed:
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                escaped_username = escape_markdown(booking.username)
-                lines.append(f"{booking.position}. @{escaped_username} ({time_range})")
+                mention = format_user_mention(booking.username, booking.user_id)
+                lines.append(f"{booking.position}. {mention} ({time_range})")
         else:
             lines.append("— Поки що немає бронювань")
 
@@ -312,9 +356,9 @@ class BookingService:
             lines.append("⏳ Черга:")
             for i, booking in enumerate(waitlist, start=1):
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                escaped_username = escape_markdown(booking.username)
+                mention = format_user_mention(booking.username, booking.user_id)
                 lines.append(
-                    f"{game.max_slots + i}. @{escaped_username} ({time_range})"
+                    f"{game.max_slots + i}. {mention} ({time_range})"
                 )
 
         # Optimal time
@@ -351,8 +395,8 @@ class BookingService:
         if confirmed:
             for booking in confirmed:
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                escaped_username = escape_markdown(booking.username)
-                lines.append(f"  {booking.position}. @{escaped_username} ({time_range})")
+                mention = format_user_mention(booking.username, booking.user_id)
+                lines.append(f"  {booking.position}. {mention} ({time_range})")
         else:
             lines.append("  — немає бронювань")
 
@@ -361,8 +405,8 @@ class BookingService:
             lines.append("Черга:")
             for i, booking in enumerate(waitlist, start=1):
                 time_range = format_time_range(booking.time_from, booking.time_to)
-                escaped_username = escape_markdown(booking.username)
-                lines.append(f"  {i}. @{escaped_username} ({time_range})")
+                mention = format_user_mention(booking.username, booking.user_id)
+                lines.append(f"  {i}. {mention} ({time_range})")
 
         # Optimal time
         if confirmed:

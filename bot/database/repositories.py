@@ -194,6 +194,16 @@ class BookingRepository:
         )
         await self.session.commit()
 
+    async def update_booking_times(
+        self, booking_id: int, time_from: time, time_to: time
+    ):
+        await self.session.execute(
+            update(Booking)
+            .where(Booking.id == booking_id)
+            .values(time_from=time_from, time_to=time_to)
+        )
+        await self.session.commit()
+
     async def update_position_and_status(
         self, booking_id: int, position: int, status: str
     ):
@@ -292,6 +302,7 @@ class BookingHistoryRepository:
         for entry in history:
             if entry.user_id not in user_stats:
                 user_stats[entry.user_id] = {
+                    "user_id": entry.user_id,
                     "username": entry.username,
                     "played": 0,
                     "cancelled": 0,

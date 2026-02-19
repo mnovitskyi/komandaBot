@@ -237,6 +237,72 @@ async def cmd_cancel(message: Message):
         )
 
 
+@router.message(Command("edit"))
+async def cmd_edit(message: Message):
+    """Handle /edit command - quick edit booking times.
+    Usage: /edit sat 19:00-23:00
+    """
+    args = message.text.split()[1:] if message.text else []
+
+    if len(args) < 2:
+        await _try_delete_message(message)
+        await message.answer(
+            "❌ Використовуйте: /edit sat 19:00-23:00",
+            disable_notification=True,
+        )
+        return
+
+    day_arg = args[0].lower()
+    time_arg = args[1]
+
+    day_map = {"sat": "saturday", "sun": "sunday", "субота": "saturday", "неділя": "sunday"}
+    day = day_map.get(day_arg)
+    if not day:
+        await _try_delete_message(message)
+        await message.answer("❌ Невірний день. Використовуйте: sat/sun або субота/неділя")
+        return
+
+    time_match = re.match(r"(\d{1,2}:\d{2})-(\d{1,2}:\d{2})", time_arg)
+    if not time_match:
+        await _try_delete_message(message)
+        await message.answer("❌ Невірний формат часу. Використовуйте: HH:MM-HH:MM")
+        return
+
+    time_from = parse_time(time_match.group(1))
+    time_to = parse_time(time_match.group(2))
+
+    if not time_from or not time_to or not is_valid_time_range(time_from, time_to):
+        await _try_delete_message(message)
+        await message.answer("❌ Невірний діапазон часу.")
+        return
+
+    async with async_session() as db:
+        service = BookingService(db)
+        game = await service.get_game("PUBG")
+        session = await service.get_session(game=game, chat_id=message.chat.id, day=day)
+
+        if not session:
+            await _try_delete_message(message)
+            await message.answer("❌ Немає активних сесій.")
+            return
+
+        username = message.from_user.username or message.from_user.first_name
+        result = await service.edit_booking(
+            session=session,
+            user_id=message.from_user.id,
+            username=username,
+            time_from=time_from,
+            time_to=time_to,
+        )
+
+        await _try_delete_message(message)
+
+        if result.success:
+            await send_session_message(message.bot, db, result.session)
+        else:
+            await message.answer(f"❌ {result.message}")
+
+
 @router.message(Command("status"))
 async def cmd_status(message: Message):
     """Handle /status command - show all open sessions."""
@@ -274,6 +340,7 @@ async def cmd_help(message: Message):
 *Команди:*
 • `/book` — Забронювати слот
 • `/book sat 18:00-22:00` — Швидке бронювання
+• `/edit sat 19:00-23:00` — Змінити час бронювання
 • `/cancel` — Скасувати бронювання
 • `/cancel sat` — Швидке скасування
 • `/status` — Хто грає

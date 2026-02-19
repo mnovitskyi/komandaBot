@@ -472,7 +472,7 @@ class TestMessageFormatting:
         session = await service.get_session_by_id(session_id)
         message = service.format_session_message(session)
 
-        assert "@user1" in message
+        assert "[user1](tg://user?id=1001)" in message
         assert "18:00-22:00" in message
         assert "Слоти (1/4)" in message
 
@@ -494,7 +494,7 @@ class TestMessageFormatting:
         message = service.format_session_message(session)
 
         assert "Черга:" in message
-        assert "@user4" in message  # 5th user in waitlist
+        assert "[user4](tg://user?id=1004)" in message  # 5th user in waitlist
 
     async def test_format_session_message_optimal_time(self, db_session, games):
         """Test formatting session shows optimal time."""
@@ -589,6 +589,176 @@ class TestAllOpenSessions:
         sessions = await service.get_all_open_sessions()
 
         assert len(sessions) == 3
+
+
+class TestCancelAndRebook:
+    """Tests for the bug where cancelled slot stays blocked."""
+
+    async def test_new_booking_confirmed_after_cancel_no_waitlist(self, db_session, games, full_session, time_range):
+        """Test that new booking gets confirmed when slot freed by cancel (no waitlist)."""
+        service = BookingService(db_session)
+
+        # Cancel one confirmed user (no one on waitlist)
+        full_session = await service.get_session_by_id(full_session.id)
+        result = await service.cancel(
+            session=full_session,
+            user_id=1001,
+            username="user1",
+        )
+        assert result.success is True
+        assert result.promoted_user is None  # No waitlist to promote
+
+        # New user books - should be confirmed, not waitlisted
+        full_session = await service.get_session_by_id(full_session.id)
+        result = await service.book(
+            session=full_session,
+            user_id=8888,
+            username="new_user",
+            time_from=time_range["time_from"],
+            time_to=time_range["time_to"],
+        )
+
+        assert result.success is True
+        assert result.is_waitlist is False
+        assert result.booking.status == "confirmed"
+
+    async def test_multiple_cancels_then_rebook(self, db_session, games, full_session, time_range):
+        """Test booking after multiple cancellations still gets confirmed."""
+        service = BookingService(db_session)
+
+        # Cancel 2 confirmed users
+        for user_id in [1001, 1002]:
+            full_session = await service.get_session_by_id(full_session.id)
+            await service.cancel(
+                session=full_session,
+                user_id=user_id,
+                username=f"user{user_id - 1000}",
+            )
+
+        # New user books - should be confirmed (only 2/4 slots taken)
+        full_session = await service.get_session_by_id(full_session.id)
+        result = await service.book(
+            session=full_session,
+            user_id=8888,
+            username="new_user",
+            time_from=time_range["time_from"],
+            time_to=time_range["time_to"],
+        )
+
+        assert result.success is True
+        assert result.is_waitlist is False
+        assert result.booking.status == "confirmed"
+
+    async def test_cancel_and_rebook_goes_to_waitlist_when_actually_full(self, db_session, games, full_session, time_range):
+        """Test that waitlist still works correctly when all slots are truly full."""
+        service = BookingService(db_session)
+
+        # All 4 slots full, no cancel - new booking should be waitlisted
+        full_session = await service.get_session_by_id(full_session.id)
+        result = await service.book(
+            session=full_session,
+            user_id=8888,
+            username="new_user",
+            time_from=time_range["time_from"],
+            time_to=time_range["time_to"],
+        )
+
+        assert result.success is True
+        assert result.is_waitlist is True
+        assert result.booking.status == "waitlist"
+
+
+class TestEditBooking:
+    """Tests for editing booking times."""
+
+    async def test_edit_booking_success(self, db_session, games, open_session, user_data, time_range):
+        """Test successful booking edit."""
+        service = BookingService(db_session)
+
+        await service.book(
+            session=open_session,
+            user_id=user_data["user_id"],
+            username=user_data["username"],
+            time_from=time_range["time_from"],
+            time_to=time_range["time_to"],
+        )
+
+        open_session = await service.get_session_by_id(open_session.id)
+        result = await service.edit_booking(
+            session=open_session,
+            user_id=user_data["user_id"],
+            username=user_data["username"],
+            time_from=time(19, 0),
+            time_to=time(23, 0),
+        )
+
+        assert result.success is True
+        assert "оновлено" in result.message
+
+        # Verify times were updated
+        booking_repo = BookingRepository(db_session)
+        booking = await booking_repo.get_user_booking(open_session.id, user_data["user_id"])
+        assert booking.time_from == time(19, 0)
+        assert booking.time_to == time(23, 0)
+
+    async def test_edit_booking_no_existing(self, db_session, games, open_session, user_data):
+        """Test editing when no booking exists."""
+        service = BookingService(db_session)
+
+        result = await service.edit_booking(
+            session=open_session,
+            user_id=user_data["user_id"],
+            username=user_data["username"],
+            time_from=time(19, 0),
+            time_to=time(23, 0),
+        )
+
+        assert result.success is False
+        assert "немає бронювання" in result.message
+
+    async def test_edit_preserves_position_and_status(self, db_session, games, open_session, time_range):
+        """Test that editing preserves position and status."""
+        service = BookingService(db_session)
+
+        # Create two bookings
+        await service.book(open_session, 1001, "user1", time_range["time_from"], time_range["time_to"])
+        open_session = await service.get_session_by_id(open_session.id)
+        await service.book(open_session, 1002, "user2", time_range["time_from"], time_range["time_to"])
+        open_session = await service.get_session_by_id(open_session.id)
+
+        # Edit user1's times
+        await service.edit_booking(open_session, 1001, "user1", time(20, 0), time(23, 0))
+
+        booking_repo = BookingRepository(db_session)
+        booking = await booking_repo.get_user_booking(open_session.id, 1001)
+        assert booking.position == 1
+        assert booking.status == "confirmed"
+
+    async def test_edit_does_not_add_cancelled_history(self, db_session, games, open_session, user_data, time_range):
+        """Test that editing does not log 'cancelled' or extra 'booked' actions."""
+        service = BookingService(db_session)
+
+        await service.book(
+            session=open_session,
+            user_id=user_data["user_id"],
+            username=user_data["username"],
+            time_from=time_range["time_from"],
+            time_to=time_range["time_to"],
+        )
+
+        open_session = await service.get_session_by_id(open_session.id)
+
+        await service.edit_booking(
+            session=open_session,
+            user_id=user_data["user_id"],
+            username=user_data["username"],
+            time_from=time(19, 0),
+            time_to=time(23, 0),
+        )
+
+        stats = await service.get_user_stats(user_data["user_id"])
+        assert stats["total_bookings"] == 1       # only the original booking
+        assert stats["total_cancellations"] == 0   # no cancellation logged
 
 
 class TestMessageIdUpdate:
