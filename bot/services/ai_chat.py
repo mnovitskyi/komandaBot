@@ -2,7 +2,7 @@ import logging
 import random
 import time as time_module
 
-import anthropic
+from groq import AsyncGroq
 
 from bot.config import config
 
@@ -38,10 +38,12 @@ SYSTEM_PROMPT = """Ти — бот-хайпмен для PUBG-команди "Te
 8. Даня Довганюк — студент-стоматолог, з Бродів, вчиться в Києві. Рідко заходить грати через навчання або роботу.
 """
 
+_MODEL = "llama-3.1-8b-instant"
+
 
 class AIChatService:
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=config.anthropic_api_key)
+        self._client = AsyncGroq(api_key=config.groq_api_key)
         self._last_reply_time: float = 0
         self._cooldown_regular = 60  # seconds between random replies
         self._cooldown_direct = 5   # seconds between direct replies
@@ -69,19 +71,16 @@ class AIChatService:
         """Generate a reply to a user message."""
         try:
             user_label = f"@{username}" if username else first_name
-            response = self.client.messages.create(
-                model="claude-haiku-4-5-20251001",
+            response = await self._client.chat.completions.create(
+                model=_MODEL,
                 max_tokens=150,
-                system=SYSTEM_PROMPT,
                 messages=[
-                    {
-                        "role": "user",
-                        "content": f"[{user_label} написав в чаті]: {message_text}",
-                    }
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"[{user_label} написав в чаті]: {message_text}"},
                 ],
             )
             self._mark_replied()
-            return response.content[0].text
+            return response.choices[0].message.content
         except Exception as e:
             logger.error(f"AI reply error: {e}")
             return None
@@ -101,13 +100,15 @@ class AIChatService:
             if not prompt:
                 return None
 
-            response = self.client.messages.create(
-                model="claude-haiku-4-5-20251001",
+            response = await self._client.chat.completions.create(
+                model=_MODEL,
                 max_tokens=100,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
             )
-            return response.content[0].text
+            return response.choices[0].message.content
         except Exception as e:
             logger.error(f"AI event reaction error: {e}")
             return None
@@ -115,5 +116,5 @@ class AIChatService:
 
 # Singleton instance (None if disabled or no API key)
 ai_service: AIChatService | None = None
-if config.ai_enabled and config.anthropic_api_key:
+if config.ai_enabled and config.groq_api_key:
     ai_service = AIChatService()

@@ -12,7 +12,7 @@ class Config:
     chat_id: int | None
     timezone: str
     admin_ids: list[int]
-    anthropic_api_key: str
+    groq_api_key: str
     ai_enabled: bool
 
     @classmethod
@@ -34,7 +34,7 @@ class Config:
             chat_id=int(chat_id_str) if chat_id_str else None,
             timezone=os.getenv("TIMEZONE", "Europe/Warsaw"),
             admin_ids=admin_ids,
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+            groq_api_key=os.getenv("GROQ_API_KEY", ""),
             ai_enabled=os.getenv("AI_ENABLED", "true").lower() == "true",
         )
 
