@@ -160,9 +160,10 @@ class BookingService:
                 is_waitlist=True,
             )
 
+        display_slot = len(confirmed) + 1
         return BookingResult(
             success=True,
-            message=f"Красава! Слот {position} твій. Ніколи не здавайся! 💪",
+            message=f"Красава! Слот {display_slot} твій. Ніколи не здавайся! 💪",
             session=session,
             booking=booking,
         )
@@ -343,10 +344,10 @@ class BookingService:
         # Slots section
         lines.append(f"✅ Слоти ({len(confirmed)}/{game.max_slots}):")
         if confirmed:
-            for booking in confirmed:
+            for i, booking in enumerate(confirmed, start=1):
                 time_range = format_time_range(booking.time_from, booking.time_to)
                 mention = format_user_mention(booking.username, booking.user_id)
-                lines.append(f"{booking.position}. {mention} ({time_range})")
+                lines.append(f"{i}. {mention} ({time_range})")
         else:
             lines.append("— Поки що немає бронювань")
 
@@ -393,10 +394,10 @@ class BookingService:
         # Slots section
         lines.append(f"Слоти ({len(confirmed)}/{game.max_slots}):")
         if confirmed:
-            for booking in confirmed:
+            for i, booking in enumerate(confirmed, start=1):
                 time_range = format_time_range(booking.time_from, booking.time_to)
                 mention = format_user_mention(booking.username, booking.user_id)
-                lines.append(f"  {booking.position}. {mention} ({time_range})")
+                lines.append(f"  {i}. {mention} ({time_range})")
         else:
             lines.append("  — немає бронювань")
 
