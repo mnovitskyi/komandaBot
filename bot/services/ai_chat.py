@@ -38,7 +38,7 @@ SYSTEM_PROMPT = """Ти — бот-хайпмен для PUBG-команди "Te
 8. Даня Довганюк — студент-стоматолог, з Бродів, вчиться в Києві. Рідко заходить грати через навчання або роботу.
 """
 
-_MODEL = "llama-3.3-70b-versatile"
+_MODEL = "moonshotai/kimi-k2-instruct"
 
 
 class AIChatService:
