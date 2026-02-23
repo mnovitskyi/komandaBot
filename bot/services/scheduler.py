@@ -5,9 +5,10 @@ from aiogram import Bot
 
 from bot.config import config
 from bot.database.session import async_session
-from bot.database.repositories import GameRepository
+from bot.database.repositories import GameRepository, UserActivityRepository, BookingHistoryRepository
 from bot.services.booking import BookingService
 from bot.services.notifications import send_session_message, send_reminder
+from bot.services.analytics import analytics_service
 from bot.utils.time_utils import get_week_start, get_timezone, calculate_optimal_time
 
 
@@ -64,6 +65,21 @@ async def close_booking_sessions(bot: Bot):
             text="🔒 Пацани, бронювання закрито. Дякую що єбашили разом!",
             disable_notification=True,
         )
+
+
+async def send_weekly_report(bot: Bot):
+    """Send weekly chat analytics report (runs on Sunday 21:00)."""
+    if not config.chat_id or not analytics_service:
+        return
+
+    async with async_session() as db:
+        activity_repo = UserActivityRepository(db)
+        booking_history_repo = BookingHistoryRepository(db)
+        all_stats = await activity_repo.get_all_week_stats(days=7)
+        booking_stats = await booking_history_repo.get_group_stats()
+
+    report = await analytics_service.generate_weekly_report(all_stats, booking_stats)
+    await bot.send_message(chat_id=config.chat_id, text=report, disable_notification=True)
 
 
 async def schedule_game_reminders(bot: Bot):
@@ -129,6 +145,15 @@ def setup_scheduler(bot: Bot):
         CronTrigger(day_of_week="sun", hour=23, minute=0, timezone=tz),
         args=[bot],
         id="close_booking",
+        replace_existing=True,
+    )
+
+    # Weekly analytics report on Sunday 21:00
+    scheduler.add_job(
+        send_weekly_report,
+        CronTrigger(day_of_week="sun", hour=21, minute=0, timezone=tz),
+        args=[bot],
+        id="weekly_report",
         replace_existing=True,
     )
 

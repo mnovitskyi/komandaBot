@@ -1,9 +1,9 @@
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timedelta
 from sqlalchemy import select, and_, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from bot.database.models import Game, Session, Booking, BookingHistory
+from bot.database.models import Game, Session, Booking, BookingHistory, UserActivity
 
 
 class GameRepository:
@@ -316,3 +316,190 @@ class BookingHistoryRepository:
         return sorted(
             user_stats.values(), key=lambda x: x["played"], reverse=True
         )
+
+
+class UserActivityRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def upsert_message(
+        self,
+        user_id: int,
+        username: str | None,
+        msg_date: date,
+        length: int,
+        has_media: bool,
+        has_question: bool,
+        hour: int,
+        bot_mention: bool = False,
+        bot_reply: bool = False,
+        has_swear: bool = False,
+    ):
+        result = await self.session.execute(
+            select(UserActivity).where(
+                and_(UserActivity.user_id == user_id, UserActivity.date == msg_date)
+            )
+        )
+        activity = result.scalar_one_or_none()
+
+        if activity is None:
+            activity = UserActivity(
+                user_id=user_id,
+                username=username,
+                date=msg_date,
+                message_count=0,
+                total_chars=0,
+                short_count=0,
+                medium_count=0,
+                long_count=0,
+                media_count=0,
+                question_count=0,
+                reactions_received=0,
+                active_hours="",
+                bot_mentions=0,
+                bot_replies=0,
+                swear_count=0,
+            )
+            self.session.add(activity)
+
+        activity.message_count += 1
+        activity.total_chars += length
+        if length < 50:
+            activity.short_count += 1
+        elif length <= 200:
+            activity.medium_count += 1
+        else:
+            activity.long_count += 1
+        if has_media:
+            activity.media_count += 1
+        if has_question:
+            activity.question_count += 1
+        if bot_mention:
+            activity.bot_mentions += 1
+        if bot_reply:
+            activity.bot_replies += 1
+        if has_swear:
+            activity.swear_count += 1
+
+        hours = set(activity.active_hours.split(",")) if activity.active_hours else set()
+        hours.discard("")
+        hours.add(str(hour))
+        activity.active_hours = ",".join(sorted(hours, key=int))
+
+        if username:
+            activity.username = username
+
+        await self.session.commit()
+
+    async def get_user_week_stats(self, user_id: int) -> dict:
+        since = date.today() - timedelta(days=7)
+        result = await self.session.execute(
+            select(UserActivity).where(
+                and_(UserActivity.user_id == user_id, UserActivity.date >= since)
+            )
+        )
+        rows = list(result.scalars().all())
+
+        all_hours: set[int] = set()
+        for r in rows:
+            if r.active_hours:
+                for h in r.active_hours.split(","):
+                    if h:
+                        all_hours.add(int(h))
+
+        return {
+            "user_id": user_id,
+            "username": rows[-1].username if rows else None,
+            "message_count": sum(r.message_count for r in rows),
+            "total_chars": sum(r.total_chars for r in rows),
+            "short_count": sum(r.short_count for r in rows),
+            "medium_count": sum(r.medium_count for r in rows),
+            "long_count": sum(r.long_count for r in rows),
+            "media_count": sum(r.media_count for r in rows),
+            "question_count": sum(r.question_count for r in rows),
+            "reactions_received": sum(r.reactions_received for r in rows),
+            "bot_mentions": sum(r.bot_mentions for r in rows),
+            "bot_replies": sum(r.bot_replies for r in rows),
+            "swear_count": sum(r.swear_count for r in rows),
+            "active_days": len(rows),
+            "active_hours": sorted(all_hours),
+        }
+
+    async def get_top_users(self, days: int = 7, limit: int = 10) -> list[dict]:
+        since = date.today() - timedelta(days=days)
+        result = await self.session.execute(
+            select(UserActivity).where(UserActivity.date >= since)
+        )
+        rows = list(result.scalars().all())
+
+        user_map: dict[int, dict] = {}
+        for r in rows:
+            if r.user_id not in user_map:
+                user_map[r.user_id] = {
+                    "user_id": r.user_id,
+                    "username": r.username,
+                    "message_count": 0,
+                    "reactions_received": 0,
+                    "question_count": 0,
+                }
+            user_map[r.user_id]["message_count"] += r.message_count
+            user_map[r.user_id]["reactions_received"] += r.reactions_received
+            user_map[r.user_id]["question_count"] += r.question_count
+            if r.username:
+                user_map[r.user_id]["username"] = r.username
+
+        return sorted(user_map.values(), key=lambda x: x["message_count"], reverse=True)[:limit]
+
+    async def get_all_week_stats(self, days: int = 7) -> list[dict]:
+        since = date.today() - timedelta(days=days)
+        result = await self.session.execute(
+            select(UserActivity).where(UserActivity.date >= since)
+        )
+        rows = list(result.scalars().all())
+
+        user_map: dict[int, dict] = {}
+        for r in rows:
+            if r.user_id not in user_map:
+                user_map[r.user_id] = {
+                    "user_id": r.user_id,
+                    "username": r.username,
+                    "message_count": 0,
+                    "total_chars": 0,
+                    "short_count": 0,
+                    "medium_count": 0,
+                    "long_count": 0,
+                    "media_count": 0,
+                    "question_count": 0,
+                    "reactions_received": 0,
+                    "bot_mentions": 0,
+                    "bot_replies": 0,
+                    "swear_count": 0,
+                    "active_days": 0,
+                }
+            user_map[r.user_id]["message_count"] += r.message_count
+            user_map[r.user_id]["total_chars"] += r.total_chars
+            user_map[r.user_id]["short_count"] += r.short_count
+            user_map[r.user_id]["medium_count"] += r.medium_count
+            user_map[r.user_id]["long_count"] += r.long_count
+            user_map[r.user_id]["media_count"] += r.media_count
+            user_map[r.user_id]["question_count"] += r.question_count
+            user_map[r.user_id]["reactions_received"] += r.reactions_received
+            user_map[r.user_id]["bot_mentions"] += r.bot_mentions
+            user_map[r.user_id]["bot_replies"] += r.bot_replies
+            user_map[r.user_id]["swear_count"] += r.swear_count
+            user_map[r.user_id]["active_days"] += 1
+            if r.username:
+                user_map[r.user_id]["username"] = r.username
+
+        return sorted(user_map.values(), key=lambda x: x["message_count"], reverse=True)
+
+    async def add_reaction(self, user_id: int, reaction_date: date):
+        result = await self.session.execute(
+            select(UserActivity).where(
+                and_(UserActivity.user_id == user_id, UserActivity.date == reaction_date)
+            )
+        )
+        activity = result.scalar_one_or_none()
+        if activity:
+            activity.reactions_received += 1
+            await self.session.commit()

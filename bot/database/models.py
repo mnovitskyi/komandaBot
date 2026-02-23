@@ -7,6 +7,7 @@ from sqlalchemy import (
     Integer,
     String,
     Time,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -68,6 +69,29 @@ class Booking(Base):
     )
 
     session: Mapped["Session"] = relationship(back_populates="bookings")
+
+
+class UserActivity(Base):
+    __tablename__ = "user_activity"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    short_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    medium_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    long_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    media_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reactions_received: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    active_hours: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    bot_mentions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bot_replies: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    swear_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "date"),)
 
 
 class BookingHistory(Base):

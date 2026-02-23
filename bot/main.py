@@ -8,9 +8,9 @@ from aiogram.client.default import DefaultBotProperties
 
 from bot.config import config
 from bot.database.session import init_db
-from bot.handlers import booking, stats, callbacks, ai_chat
+from bot.handlers import booking, stats, callbacks, ai_chat, analytics
 from bot.services.scheduler import setup_scheduler, shutdown_scheduler
-from bot.middlewares import ChatFilterMiddleware
+from bot.middlewares import ChatFilterMiddleware, ActivityTrackerMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -41,11 +41,14 @@ async def main():
     # Add middleware to restrict to specific chat only
     dp.message.middleware(ChatFilterMiddleware())
     dp.callback_query.middleware(ChatFilterMiddleware())
+    # Track activity metrics (no raw text stored)
+    dp.message.middleware(ActivityTrackerMiddleware())
 
     # Register handlers
     dp.include_router(booking.router)
     dp.include_router(stats.router)
     dp.include_router(callbacks.router)
+    dp.include_router(analytics.router)  # Analytics commands — before AI catch-all
     dp.include_router(ai_chat.router)  # AI chat handler — must be last (catch-all)
 
     # Setup scheduler
