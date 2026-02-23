@@ -45,6 +45,17 @@ _SWEAR_WORDS = frozenset({
     "їбав", "їбала", "їбали", "їбальний", "їбальник", "їбальнику",
     "їбана", "їбанат", "їбанута", "їбанути", "їбанутий", "їбанутись", "їбанько",
     "їбати", "їбатись", "їбатися", "їбе", "їбеш", "їблана", "їблани",
+    # Latin transliterations
+    "khuy", "huy", "xuy", "khuyna", "khuilo",
+    "pizda", "pyzda", "pizdec", "pizdets",
+    "yibaty", "yibat", "yiban", "yibana",
+    "yebat", "yebaty", "yeban",
+    "blyad", "bliad",
+    "suka",
+    "pidar", "pidor", "pidaras",
+    "mudak",
+    "zalupa",
+    "nakhuy", "nahuy",
 })
 
 
