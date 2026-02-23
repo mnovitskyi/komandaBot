@@ -500,6 +500,37 @@ class UserActivityRepository:
             activity.mom_insult_count += 1
             await self.session.commit()
 
+    async def get_all_users_total_stats(self) -> list[dict]:
+        result = await self.session.execute(select(UserActivity))
+        rows = list(result.scalars().all())
+
+        user_map: dict[int, dict] = {}
+        for r in rows:
+            if r.user_id not in user_map:
+                user_map[r.user_id] = {
+                    "user_id": r.user_id,
+                    "username": r.username,
+                    "message_count": 0,
+                    "total_chars": 0,
+                    "bot_mentions": 0,
+                    "bot_replies": 0,
+                    "mom_insult_count": 0,
+                    "fire_reactions": 0,
+                    "heart_reactions": 0,
+                }
+            u = user_map[r.user_id]
+            u["message_count"] += r.message_count
+            u["total_chars"] += r.total_chars
+            u["bot_mentions"] += r.bot_mentions
+            u["bot_replies"] += r.bot_replies
+            u["mom_insult_count"] += r.mom_insult_count
+            u["fire_reactions"] += r.fire_reactions
+            u["heart_reactions"] += r.heart_reactions
+            if r.username:
+                u["username"] = r.username
+
+        return list(user_map.values())
+
     async def get_user_total_stats(self, user_id: int) -> dict:
         result = await self.session.execute(
             select(UserActivity).where(UserActivity.user_id == user_id)
