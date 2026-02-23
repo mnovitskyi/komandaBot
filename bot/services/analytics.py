@@ -44,35 +44,40 @@ class AnalyticsService:
             return "Не вдалося зчитати вайб 🤷"
 
     async def get_user_stats_text(self, user_id: int, username: str | None, db) -> str:
-        """Return formatted activity stats text for a user."""
+        """Return formatted activity stats from DB — no AI involved."""
         repo = UserActivityRepository(db)
         stats = await repo.get_user_week_stats(user_id)
+        return _format_stats(user_id, username, stats)
 
-        if stats["message_count"] == 0:
-            name = f"@{username}" if username else f"user {user_id}"
-            return f"{name} мовчить як риба вже 7 днів 🐟"
 
-        name = f"@{username}" if username else f"user {user_id}"
-        avg_len = stats["total_chars"] // stats["message_count"] if stats["message_count"] else 0
-        hours_str = (
-            ", ".join(f"{h}:00" for h in stats["active_hours"])
-            if stats["active_hours"]
-            else "невідомо"
-        )
+def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
+    name = f"@{username}" if username else f"user {user_id}"
 
-        return (
-            f"📊 Статистика {name} за 7 днів:\n"
-            f"💬 Повідомлень: {stats['message_count']}\n"
-            f"📝 Середня довжина: {avg_len} символів\n"
-            f"  └ Коротких (<50): {stats['short_count']}\n"
-            f"  └ Середніх (50-200): {stats['medium_count']}\n"
-            f"  └ Довгих (>200): {stats['long_count']}\n"
-            f"🖼 Медіа: {stats['media_count']}\n"
-            f"❓ Питань: {stats['question_count']}\n"
-            f"🤬 Матів: {stats['swear_count']}\n"
-            f"⏰ Активні години: {hours_str}\n"
-            f"🤖 Звернень до бота: {stats['bot_mentions'] + stats['bot_replies']}"
-        )
+    if stats["message_count"] == 0:
+        return f"{name}: немає активності за останні 7 днів."
+
+    avg_len = stats["total_chars"] // stats["message_count"] if stats["message_count"] else 0
+    hours_str = (
+        ", ".join(f"{h}:00" for h in stats["active_hours"])
+        if stats["active_hours"]
+        else "—"
+    )
+
+    return (
+        f"📊 {name} — останні 7 днів\n"
+        f"\n"
+        f"💬 Повідомлень: {stats['message_count']}\n"
+        f"📝 Середня довжина: {avg_len} симв.\n"
+        f"  └ Коротких (<50): {stats['short_count']}\n"
+        f"  └ Середніх (50-200): {stats['medium_count']}\n"
+        f"  └ Довгих (>200): {stats['long_count']}\n"
+        f"🖼 Медіа: {stats['media_count']}\n"
+        f"❓ Питань: {stats['question_count']}\n"
+        f"🤬 Матів: {stats['swear_count']}\n"
+        f"⏰ Активні години: {hours_str}\n"
+        f"📅 Активних днів: {stats['active_days']}/7\n"
+        f"🤖 Звернень до бота: {stats['bot_mentions'] + stats['bot_replies']}"
+    )
 
     async def get_top_text(self, db) -> str:
         """Return formatted leaderboard with AI one-liner comment."""

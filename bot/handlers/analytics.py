@@ -7,7 +7,7 @@ from aiogram.types import Message
 
 from bot.database.session import async_session
 from bot.database.repositories import UserActivityRepository
-from bot.services.analytics import analytics_service
+from bot.services.analytics import analytics_service, _format_stats
 from bot.services.ai_chat import ai_service
 
 logger = logging.getLogger(__name__)
@@ -32,19 +32,19 @@ _RELEASE_NOTE = """🆕 <b>Що нового в боті</b>
 
 <b>Нові команди:</b>
 
-/вайб
+/vibe
 Перевірка настрою чату прямо зараз. AI читає останні 30 повідомлень і описує що відбувається.
 
-/стата
+/stat
 Твоя статистика за останні 7 днів — повідомлення, мати, активні години і все інше.
 
-/стата @vasya
+/stat @vasya
 Те саме, але для іншого учасника.
 
-/топ
+/top
 Лідерборд тижня: хто найактивніший, скільки питань задавав. AI додає смішний коментар до рейтингу.
 
-/роль @vasya
+/role @vasya
 AI аналізує поведінкові метрики Васі і призначає йому соціальну роль:
 🧠 Стратег · 🔥 Провокатор · 😂 Мемолог · 💤 Спостерігач
 💬 Балакун · 💼 Бізнес-мозок · 👻 Привид
@@ -61,7 +61,7 @@ async def handle_release_note(message: Message):
     await message.reply(_RELEASE_NOTE)
 
 
-@router.message(Command("вайб"))
+@router.message(Command("vibe"))
 async def handle_vibe(message: Message):
     if not analytics_service:
         await message.reply("AI вимкнено 🤖")
@@ -72,12 +72,8 @@ async def handle_vibe(message: Message):
     await message.reply(vibe)
 
 
-@router.message(Command("стата"))
-async def handle_stats(message: Message):
-    if not analytics_service:
-        await message.reply("AI вимкнено 🤖")
-        return
-
+@router.message(Command("stat"))
+async def handle_stat(message: Message):
     text = message.text or ""
     mention_match = re.search(r"@(\w+)", text)
 
@@ -100,17 +96,19 @@ async def handle_stats(message: Message):
             return
 
         async with async_session() as db:
-            reply = await analytics_service.get_user_stats_text(target_id, target_username, db)
+            repo = UserActivityRepository(db)
+            stats = await repo.get_user_week_stats(target_id)
     else:
         target_id = message.from_user.id
         target_username = message.from_user.username
         async with async_session() as db:
-            reply = await analytics_service.get_user_stats_text(target_id, target_username, db)
+            repo = UserActivityRepository(db)
+            stats = await repo.get_user_week_stats(target_id)
 
-    await message.reply(reply)
+    await message.reply(_format_stats(target_id, target_username, stats))
 
 
-@router.message(Command("топ"))
+@router.message(Command("top"))
 async def handle_top(message: Message):
     if not analytics_service:
         await message.reply("AI вимкнено 🤖")
@@ -122,7 +120,7 @@ async def handle_top(message: Message):
     await message.reply(reply)
 
 
-@router.message(Command("роль"))
+@router.message(Command("role"))
 async def handle_role(message: Message):
     if not analytics_service:
         await message.reply("AI вимкнено 🤖")
@@ -132,7 +130,7 @@ async def handle_role(message: Message):
     mention_match = re.search(r"@(\w+)", text)
 
     if not mention_match:
-        await message.reply("Вкажи користувача: /роль @username")
+        await message.reply("Вкажи користувача: /role @username")
         return
 
     target_username = mention_match.group(1)
