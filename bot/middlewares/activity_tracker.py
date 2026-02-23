@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import re
+from collections import OrderedDict
 from datetime import date, datetime
 from typing import Callable, Dict, Any, Awaitable
 
@@ -13,6 +14,11 @@ from bot.database.repositories import UserActivityRepository
 from bot.utils.time_utils import get_timezone
 
 logger = logging.getLogger(__name__)
+
+# In-memory map: message_id → author user_id (for reaction attribution).
+# Bounded to last 1000 messages; lost on restart (XP already in DB is safe).
+_message_authors: OrderedDict[int, int] = OrderedDict()
+_MAX_TRACKED = 1000
 
 # Ukrainian profanity word list. Only the count is stored — raw text is never persisted.
 _SWEAR_WORDS = frozenset({
@@ -126,6 +132,11 @@ class ActivityTrackerMiddleware(BaseMiddleware):
             )
             words = set(re.split(r"\W+", text.lower()))
             has_swear = bool(words & _SWEAR_WORDS)
+
+            # Track message_id → author for reaction attribution
+            _message_authors[message.message_id] = message.from_user.id
+            if len(_message_authors) > _MAX_TRACKED:
+                _message_authors.popitem(last=False)
 
             async with async_session() as db:
                 repo = UserActivityRepository(db)

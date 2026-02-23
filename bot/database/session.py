@@ -23,6 +23,8 @@ async def init_db():
             migrations = [
                 "ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS swear_count INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS mom_insult_count INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS fire_reactions INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS heart_reactions INTEGER NOT NULL DEFAULT 0",
             ]
             for sql in migrations:
                 await conn.execute(text(sql))

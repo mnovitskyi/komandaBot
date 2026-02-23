@@ -360,6 +360,8 @@ class UserActivityRepository:
                 bot_replies=0,
                 swear_count=0,
                 mom_insult_count=0,
+                fire_reactions=0,
+                heart_reactions=0,
             )
             self.session.add(activity)
 
@@ -510,7 +512,22 @@ class UserActivityRepository:
             activity.mom_insult_count += 1
             await self.session.commit()
 
-    async def add_reaction(self, user_id: int, reaction_date: date):
+    async def get_user_total_stats(self, user_id: int) -> dict:
+        result = await self.session.execute(
+            select(UserActivity).where(UserActivity.user_id == user_id)
+        )
+        rows = list(result.scalars().all())
+        return {
+            "message_count": sum(r.message_count for r in rows),
+            "total_chars": sum(r.total_chars for r in rows),
+            "bot_mentions": sum(r.bot_mentions for r in rows),
+            "bot_replies": sum(r.bot_replies for r in rows),
+            "mom_insult_count": sum(r.mom_insult_count for r in rows),
+            "fire_reactions": sum(r.fire_reactions for r in rows),
+            "heart_reactions": sum(r.heart_reactions for r in rows),
+        }
+
+    async def add_reaction(self, user_id: int, reaction_date: date, fire: int = 0, heart: int = 0):
         result = await self.session.execute(
             select(UserActivity).where(
                 and_(UserActivity.user_id == user_id, UserActivity.date == reaction_date)
@@ -518,5 +535,7 @@ class UserActivityRepository:
         )
         activity = result.scalar_one_or_none()
         if activity:
-            activity.reactions_received += 1
+            activity.fire_reactions += fire
+            activity.heart_reactions += heart
+            activity.reactions_received += fire + heart
             await self.session.commit()

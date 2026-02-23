@@ -9,8 +9,44 @@ logger = logging.getLogger(__name__)
 
 _MODEL = "moonshotai/kimi-k2-instruct"
 
+# XP thresholds and level names (less offensive at lower levels)
+LEVELS = [
+    (0,    "🥚 Не вилупився"),
+    (50,   "🐣 Курча"),
+    (150,  "🎮 Диванний стратег"),
+    (350,  "🍺 Пивний аналітик"),
+    (700,  "🔫 Збройний мудак"),
+    (1200, "🏕 Кемпер-підар"),
+    (2000, "💀 Ходячий труп"),
+    (3000, "🤬 Гроза маминих ботів"),
+    (5000, "👑 Король хаосу"),
+    (8000, "🍗 Трахнув маму бота"),
+]
 
-def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
+
+def calculate_xp(total_stats: dict) -> int:
+    xp = 0
+    xp += total_stats.get("message_count", 0)
+    xp += total_stats.get("total_chars", 0) // 100
+    xp += (total_stats.get("bot_mentions", 0) + total_stats.get("bot_replies", 0)) * 3
+    xp += total_stats.get("mom_insult_count", 0) * 5
+    xp += total_stats.get("fire_reactions", 0) * 2
+    xp += total_stats.get("heart_reactions", 0)
+    return xp
+
+
+def get_level(xp: int) -> tuple[int, str, int]:
+    """Returns (level_number, level_name, xp_to_next). xp_to_next=0 at max level."""
+    current_idx = 0
+    for i, (threshold, _) in enumerate(LEVELS):
+        if xp >= threshold:
+            current_idx = i
+    level_name = LEVELS[current_idx][1]
+    xp_to_next = LEVELS[current_idx + 1][0] - xp if current_idx < len(LEVELS) - 1 else 0
+    return current_idx + 1, level_name, xp_to_next
+
+
+def _format_stats(user_id: int, username: str | None, stats: dict, total_stats: dict | None = None) -> str:
     name = f"@{username}" if username else f"user {user_id}"
 
     if stats["message_count"] == 0:
@@ -23,8 +59,17 @@ def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
         else "—"
     )
 
-    return (
-        f"📊 {name} — останні 7 днів\n"
+    lines = [f"📊 {name} — останні 7 днів\n"]
+
+    if total_stats is not None:
+        xp = calculate_xp(total_stats)
+        level_num, level_name, xp_to_next = get_level(xp)
+        if xp_to_next > 0:
+            lines.append(f"⚡ Рівень {level_num}: {level_name} | {xp} XP (ще {xp_to_next} до наступного)\n")
+        else:
+            lines.append(f"⚡ Рівень {level_num}: {level_name} | {xp} XP (MAX)\n")
+
+    lines.append(
         f"\n"
         f"💬 Повідомлень: {stats['message_count']}\n"
         f"📝 Середня довжина: {avg_len} симв.\n"
@@ -39,6 +84,7 @@ def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
         f"📅 Активних днів: {stats['active_days']}/7\n"
         f"🤖 Звернень до бота: {stats['bot_mentions'] + stats['bot_replies']}"
     )
+    return "".join(lines)
 
 
 class AnalyticsService:
