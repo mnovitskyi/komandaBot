@@ -45,6 +45,7 @@ _SWEAR_WORDS = frozenset({
     "їбав", "їбала", "їбали", "їбальний", "їбальник", "їбальнику",
     "їбана", "їбанат", "їбанута", "їбанути", "їбанутий", "їбанутись", "їбанько",
     "їбати", "їбатись", "їбатися", "їбе", "їбеш", "їблана", "їблани",
+    # mom insults (covered via _MOM_INSULT_PHRASES below too)
     # Latin transliterations
     "khuy", "huy", "xuy", "khuyna", "khuilo",
     "pizda", "pyzda", "pizdec", "pizdets",
@@ -57,6 +58,16 @@ _SWEAR_WORDS = frozenset({
     "zalupa",
     "nakhuy", "nahuy",
 })
+
+# Phrases for mom-insult detection (substring match on lowercased text).
+_MOM_INSULT_PHRASES = (
+    "твою мам", "мамку твою", "мать твою", "матір твою",
+    "їбав маму", "їбав мамку", "їб маму", "їб мамку",
+    "йобав маму", "йобав мамку", "йоб маму",
+    "єбав маму", "єбав мамку", "єб маму",
+    "трахнув маму", "трахнув мамку",
+    "yib mamu", "yibav mamu", "trakhnuv mamu",
+)
 
 
 class ActivityTrackerMiddleware(BaseMiddleware):
@@ -94,8 +105,10 @@ class ActivityTrackerMiddleware(BaseMiddleware):
                 and message.reply_to_message.from_user
                 and message.reply_to_message.from_user.id == bot_id
             )
-            words = set(re.split(r"\W+", text.lower()))
+            text_lower = text.lower()
+            words = set(re.split(r"\W+", text_lower))
             has_swear = bool(words & _SWEAR_WORDS)
+            has_mom_insult = any(phrase in text_lower for phrase in _MOM_INSULT_PHRASES)
 
             async with async_session() as db:
                 repo = UserActivityRepository(db)
@@ -110,6 +123,7 @@ class ActivityTrackerMiddleware(BaseMiddleware):
                     bot_mention=bot_mention,
                     bot_reply=bot_reply,
                     has_swear=has_swear,
+                    has_mom_insult=has_mom_insult,
                 )
         except Exception as e:
             logger.error(f"Activity tracker error: {e}")

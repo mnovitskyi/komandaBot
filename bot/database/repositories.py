@@ -334,6 +334,7 @@ class UserActivityRepository:
         bot_mention: bool = False,
         bot_reply: bool = False,
         has_swear: bool = False,
+        has_mom_insult: bool = False,
     ):
         result = await self.session.execute(
             select(UserActivity).where(
@@ -359,6 +360,7 @@ class UserActivityRepository:
                 bot_mentions=0,
                 bot_replies=0,
                 swear_count=0,
+                mom_insult_count=0,
             )
             self.session.add(activity)
 
@@ -380,6 +382,8 @@ class UserActivityRepository:
             activity.bot_replies += 1
         if has_swear:
             activity.swear_count += 1
+        if has_mom_insult:
+            activity.mom_insult_count += 1
 
         hours = set(activity.active_hours.split(",")) if activity.active_hours else set()
         hours.discard("")
@@ -421,6 +425,7 @@ class UserActivityRepository:
             "bot_mentions": sum(r.bot_mentions for r in rows),
             "bot_replies": sum(r.bot_replies for r in rows),
             "swear_count": sum(r.swear_count for r in rows),
+            "mom_insult_count": sum(r.mom_insult_count for r in rows),
             "active_days": len(rows),
             "active_hours": sorted(all_hours),
         }
@@ -441,10 +446,12 @@ class UserActivityRepository:
                     "message_count": 0,
                     "reactions_received": 0,
                     "question_count": 0,
+                    "mom_insult_count": 0,
                 }
             user_map[r.user_id]["message_count"] += r.message_count
             user_map[r.user_id]["reactions_received"] += r.reactions_received
             user_map[r.user_id]["question_count"] += r.question_count
+            user_map[r.user_id]["mom_insult_count"] += r.mom_insult_count
             if r.username:
                 user_map[r.user_id]["username"] = r.username
 
@@ -474,6 +481,7 @@ class UserActivityRepository:
                     "bot_mentions": 0,
                     "bot_replies": 0,
                     "swear_count": 0,
+                    "mom_insult_count": 0,
                     "active_days": 0,
                 }
             user_map[r.user_id]["message_count"] += r.message_count
@@ -487,6 +495,7 @@ class UserActivityRepository:
             user_map[r.user_id]["bot_mentions"] += r.bot_mentions
             user_map[r.user_id]["bot_replies"] += r.bot_replies
             user_map[r.user_id]["swear_count"] += r.swear_count
+            user_map[r.user_id]["mom_insult_count"] += r.mom_insult_count
             user_map[r.user_id]["active_days"] += 1
             if r.username:
                 user_map[r.user_id]["username"] = r.username

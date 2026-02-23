@@ -90,6 +90,7 @@ class UserActivity(Base):
     bot_mentions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     bot_replies: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     swear_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    mom_insult_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     __table_args__ = (UniqueConstraint("user_id", "date"),)
 

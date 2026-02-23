@@ -34,6 +34,7 @@ def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
         f"🖼 Медіа: {stats['media_count']}\n"
         f"❓ Питань: {stats['question_count']}\n"
         f"🤬 Матів: {stats['swear_count']}\n"
+        f"👩 Мам трахнуто: {stats['mom_insult_count']}\n"
         f"⏰ Активні години: {hours_str}\n"
         f"📅 Активних днів: {stats['active_days']}/7\n"
         f"🤖 Звернень до бота: {stats['bot_mentions'] + stats['bot_replies']}"
@@ -97,6 +98,12 @@ class AnalyticsService:
             )
 
         board_text = "\n".join(lines)
+
+        # Mom insult king
+        mom_king = max(top, key=lambda u: u.get("mom_insult_count", 0), default=None)
+        if mom_king and mom_king.get("mom_insult_count", 0) > 0:
+            mom_name = f"@{mom_king['username']}" if mom_king.get("username") else f"user {mom_king['user_id']}"
+            board_text += f"\n\n👩 Найбільше трахнув маму бота: {mom_name} ({mom_king['mom_insult_count']} раз)"
 
         try:
             response = await self._client.chat.completions.create(
