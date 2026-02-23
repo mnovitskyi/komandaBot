@@ -10,6 +10,36 @@ logger = logging.getLogger(__name__)
 _MODEL = "moonshotai/kimi-k2-instruct"
 
 
+def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
+    name = f"@{username}" if username else f"user {user_id}"
+
+    if stats["message_count"] == 0:
+        return f"{name}: немає повідомлень за останні 7 днів. Дані збираються з моменту запуску бота."
+
+    avg_len = stats["total_chars"] // stats["message_count"] if stats["message_count"] else 0
+    hours_str = (
+        ", ".join(f"{h}:00" for h in stats["active_hours"])
+        if stats["active_hours"]
+        else "—"
+    )
+
+    return (
+        f"📊 {name} — останні 7 днів\n"
+        f"\n"
+        f"💬 Повідомлень: {stats['message_count']}\n"
+        f"📝 Середня довжина: {avg_len} симв.\n"
+        f"  └ Коротких (&lt;50): {stats['short_count']}\n"
+        f"  └ Середніх (50-200): {stats['medium_count']}\n"
+        f"  └ Довгих (&gt;200): {stats['long_count']}\n"
+        f"🖼 Медіа: {stats['media_count']}\n"
+        f"❓ Питань: {stats['question_count']}\n"
+        f"🤬 Матів: {stats['swear_count']}\n"
+        f"⏰ Активні години: {hours_str}\n"
+        f"📅 Активних днів: {stats['active_days']}/7\n"
+        f"🤖 Звернень до бота: {stats['bot_mentions'] + stats['bot_replies']}"
+    )
+
+
 class AnalyticsService:
     def __init__(self):
         self._client = AsyncGroq(api_key=config.groq_api_key)
@@ -48,36 +78,6 @@ class AnalyticsService:
         repo = UserActivityRepository(db)
         stats = await repo.get_user_week_stats(user_id)
         return _format_stats(user_id, username, stats)
-
-
-def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
-    name = f"@{username}" if username else f"user {user_id}"
-
-    if stats["message_count"] == 0:
-        return f"{name}: немає повідомлень за останні 7 днів. Дані збираються з моменту запуску бота."
-
-    avg_len = stats["total_chars"] // stats["message_count"] if stats["message_count"] else 0
-    hours_str = (
-        ", ".join(f"{h}:00" for h in stats["active_hours"])
-        if stats["active_hours"]
-        else "—"
-    )
-
-    return (
-        f"📊 {name} — останні 7 днів\n"
-        f"\n"
-        f"💬 Повідомлень: {stats['message_count']}\n"
-        f"📝 Середня довжина: {avg_len} симв.\n"
-        f"  └ Коротких (&lt;50): {stats['short_count']}\n"
-        f"  └ Середніх (50-200): {stats['medium_count']}\n"
-        f"  └ Довгих (&gt;200): {stats['long_count']}\n"
-        f"🖼 Медіа: {stats['media_count']}\n"
-        f"❓ Питань: {stats['question_count']}\n"
-        f"🤬 Матів: {stats['swear_count']}\n"
-        f"⏰ Активні години: {hours_str}\n"
-        f"📅 Активних днів: {stats['active_days']}/7\n"
-        f"🤖 Звернень до бота: {stats['bot_mentions'] + stats['bot_replies']}"
-    )
 
     async def get_top_text(self, db) -> str:
         """Return formatted leaderboard with AI one-liner comment."""
