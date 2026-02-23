@@ -334,7 +334,6 @@ class UserActivityRepository:
         bot_mention: bool = False,
         bot_reply: bool = False,
         has_swear: bool = False,
-        has_mom_insult: bool = False,
     ):
         result = await self.session.execute(
             select(UserActivity).where(
@@ -382,8 +381,6 @@ class UserActivityRepository:
             activity.bot_replies += 1
         if has_swear:
             activity.swear_count += 1
-        if has_mom_insult:
-            activity.mom_insult_count += 1
 
         hours = set(activity.active_hours.split(",")) if activity.active_hours else set()
         hours.discard("")
@@ -501,6 +498,17 @@ class UserActivityRepository:
                 user_map[r.user_id]["username"] = r.username
 
         return sorted(user_map.values(), key=lambda x: x["message_count"], reverse=True)
+
+    async def increment_mom_insult(self, user_id: int, activity_date: date):
+        result = await self.session.execute(
+            select(UserActivity).where(
+                and_(UserActivity.user_id == user_id, UserActivity.date == activity_date)
+            )
+        )
+        activity = result.scalar_one_or_none()
+        if activity:
+            activity.mom_insult_count += 1
+            await self.session.commit()
 
     async def add_reaction(self, user_id: int, reaction_date: date):
         result = await self.session.execute(

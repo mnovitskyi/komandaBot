@@ -1,4 +1,5 @@
 """Middleware to track user activity metrics. Raw text is never stored."""
+import asyncio
 import logging
 import re
 from datetime import date, datetime
@@ -45,7 +46,6 @@ _SWEAR_WORDS = frozenset({
     "їбав", "їбала", "їбали", "їбальний", "їбальник", "їбальнику",
     "їбана", "їбанат", "їбанута", "їбанути", "їбанутий", "їбанутись", "їбанько",
     "їбати", "їбатись", "їбатися", "їбе", "їбеш", "їблана", "їблани",
-    # mom insults (covered via _MOM_INSULT_PHRASES below too)
     # Latin transliterations
     "khuy", "huy", "xuy", "khuyna", "khuilo",
     "pizda", "pyzda", "pizdec", "pizdets",
@@ -59,15 +59,34 @@ _SWEAR_WORDS = frozenset({
     "nakhuy", "nahuy",
 })
 
-# Phrases for mom-insult detection (substring match on lowercased text).
-_MOM_INSULT_PHRASES = (
-    "твою мам", "мамку твою", "мать твою", "матір твою",
-    "їбав маму", "їбав мамку", "їб маму", "їб мамку",
-    "йобав маму", "йобав мамку", "йоб маму",
-    "єбав маму", "єбав мамку", "єб маму",
-    "трахнув маму", "трахнув мамку",
-    "yib mamu", "yibav mamu", "trakhnuv mamu",
-)
+
+async def _classify_mom_insult_bg(user_id: int, username: str | None, text: str, msg_date: date):
+    """Background task: ask AI if the message insults the bot's mom. Text is not stored."""
+    try:
+        from groq import AsyncGroq
+        from bot.config import config
+
+        client = AsyncGroq(api_key=config.groq_api_key)
+        response = await client.chat.completions.create(
+            model="moonshotai/kimi-k2-instruct",
+            max_tokens=5,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Чи є в цьому повідомленні образа мами? "
+                        f"Відповідай тільки ТАК або НІ:\n{text}"
+                    ),
+                }
+            ],
+        )
+        answer = response.choices[0].message.content.strip().upper()
+        if "ТАК" in answer or "YES" in answer or "ДА" in answer:
+            async with async_session() as db:
+                repo = UserActivityRepository(db)
+                await repo.increment_mom_insult(user_id, msg_date)
+    except Exception as e:
+        logger.error(f"Mom insult classification error: {e}")
 
 
 class ActivityTrackerMiddleware(BaseMiddleware):
@@ -105,10 +124,8 @@ class ActivityTrackerMiddleware(BaseMiddleware):
                 and message.reply_to_message.from_user
                 and message.reply_to_message.from_user.id == bot_id
             )
-            text_lower = text.lower()
-            words = set(re.split(r"\W+", text_lower))
+            words = set(re.split(r"\W+", text.lower()))
             has_swear = bool(words & _SWEAR_WORDS)
-            has_mom_insult = any(phrase in text_lower for phrase in _MOM_INSULT_PHRASES)
 
             async with async_session() as db:
                 repo = UserActivityRepository(db)
@@ -123,7 +140,19 @@ class ActivityTrackerMiddleware(BaseMiddleware):
                     bot_mention=bot_mention,
                     bot_reply=bot_reply,
                     has_swear=has_swear,
-                    has_mom_insult=has_mom_insult,
                 )
+
+            # AI mom-insult detection only for bot-targeted messages (fire-and-forget)
+            if (bot_mention or bot_reply) and text:
+                from bot.config import config
+                if config.ai_enabled and config.groq_api_key:
+                    asyncio.create_task(
+                        _classify_mom_insult_bg(
+                            user_id=message.from_user.id,
+                            username=message.from_user.username,
+                            text=text,
+                            msg_date=date.today(),
+                        )
+                    )
         except Exception as e:
             logger.error(f"Activity tracker error: {e}")
