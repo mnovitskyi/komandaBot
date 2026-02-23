@@ -54,7 +54,7 @@ def _format_stats(user_id: int, username: str | None, stats: dict) -> str:
     name = f"@{username}" if username else f"user {user_id}"
 
     if stats["message_count"] == 0:
-        return f"{name}: немає активності за останні 7 днів."
+        return f"{name}: немає повідомлень за останні 7 днів. Дані збираються з моменту запуску бота."
 
     avg_len = stats["total_chars"] // stats["message_count"] if stats["message_count"] else 0
     hours_str = (
