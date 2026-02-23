@@ -328,8 +328,6 @@ class UserActivityRepository:
         username: str | None,
         msg_date: date,
         length: int,
-        has_media: bool,
-        has_question: bool,
         hour: int,
         bot_mention: bool = False,
         bot_reply: bool = False,
@@ -367,16 +365,6 @@ class UserActivityRepository:
 
         activity.message_count += 1
         activity.total_chars += length
-        if length < 50:
-            activity.short_count += 1
-        elif length <= 200:
-            activity.medium_count += 1
-        else:
-            activity.long_count += 1
-        if has_media:
-            activity.media_count += 1
-        if has_question:
-            activity.question_count += 1
         if bot_mention:
             activity.bot_mentions += 1
         if bot_reply:

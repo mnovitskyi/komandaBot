@@ -121,8 +121,6 @@ class ActivityTrackerMiddleware(BaseMiddleware):
 
             text = message.text or message.caption or ""
             length = len(text)
-            has_media = bool(message.photo or message.video or message.sticker)
-            has_question = "?" in text
             hour = datetime.now(get_timezone()).hour
             bot_mention = bool(bot_username and f"@{bot_username}" in text)
             bot_reply = bool(
@@ -145,8 +143,6 @@ class ActivityTrackerMiddleware(BaseMiddleware):
                     username=message.from_user.username,
                     msg_date=date.today(),
                     length=length,
-                    has_media=has_media,
-                    has_question=has_question,
                     hour=hour,
                     bot_mention=bot_mention,
                     bot_reply=bot_reply,

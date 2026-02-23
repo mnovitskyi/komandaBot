@@ -73,11 +73,6 @@ def _format_stats(user_id: int, username: str | None, stats: dict, total_stats: 
         f"\n"
         f"💬 Повідомлень: {stats['message_count']}\n"
         f"📝 Середня довжина: {avg_len} симв.\n"
-        f"  └ Коротких (&lt;50): {stats['short_count']}\n"
-        f"  └ Середніх (50-200): {stats['medium_count']}\n"
-        f"  └ Довгих (&gt;200): {stats['long_count']}\n"
-        f"🖼 Медіа: {stats['media_count']}\n"
-        f"❓ Питань: {stats['question_count']}\n"
         f"🤬 Матів: {stats['swear_count']}\n"
         f"👩 Мам трахнуто: {stats['mom_insult_count']}\n"
         f"⏰ Активні години: {hours_str}\n"
@@ -140,7 +135,7 @@ class AnalyticsService:
             medal = medals[i] if i < 3 else f"{i + 1}."
             name = f"@{user['username']}" if user.get("username") else f"user {user['user_id']}"
             lines.append(
-                f"{medal} {name} — {user['message_count']} повідомлень, {user['question_count']} питань"
+                f"{medal} {name} — {user['message_count']} повідомлень"
             )
 
         board_text = "\n".join(lines)
@@ -183,15 +178,11 @@ class AnalyticsService:
             f"Користувач: {name}\n"
             f"Повідомлень за тиждень: {stats['message_count']}\n"
             f"Середня довжина: {avg_len} символів\n"
-            f"Коротких (<50): {stats['short_count']}\n"
-            f"Середніх (50-200): {stats['medium_count']}\n"
-            f"Довгих (>200): {stats['long_count']}\n"
-            f"Медіа: {stats['media_count']}\n"
-            f"Питань: {stats['question_count']}\n"
             f"Активних днів: {stats['active_days']}\n"
             f"Тегів бота: {stats['bot_mentions']}\n"
             f"Відповідей боту: {stats['bot_replies']}\n"
-            f"Матів: {stats['swear_count']}"
+            f"Матів: {stats['swear_count']}\n"
+            f"Образ мами бота: {stats['mom_insult_count']}"
         )
 
         try:
