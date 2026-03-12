@@ -1,0 +1,27 @@
+# Stage 1: Build Vue frontend
+FROM node:20-slim AS frontend-build
+WORKDIR /app/web/frontend
+COPY web/frontend/package*.json ./
+RUN npm install
+COPY web/frontend/ ./
+RUN npm run build
+
+# Stage 2: Python backend
+FROM python:3.12-slim
+WORKDIR /app
+
+# Install bot deps (needed to import bot.database.models)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install web backend deps
+COPY web/backend/requirements.txt web/backend/requirements.txt
+RUN pip install --no-cache-dir -r web/backend/requirements.txt
+
+# Copy source
+COPY . .
+
+# Copy built Vue frontend
+COPY --from=frontend-build /app/web/frontend/dist web/frontend/dist
+
+CMD ["sh", "-c", "uvicorn web.backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
