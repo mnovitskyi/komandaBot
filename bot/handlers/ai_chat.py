@@ -27,11 +27,14 @@ async def handle_ai_message(message: Message):
     if bot_info.username and f"@{bot_info.username}" in message.text:
         is_direct = True
 
-    if not ai_service.should_reply(is_direct):
-        return
-
     username = message.from_user.username or ""
     first_name = message.from_user.first_name or ""
+
+    # Always record the message in context, regardless of whether we reply
+    ai_service.add_message(username, first_name, message.text)
+
+    if not ai_service.should_reply(is_direct):
+        return
 
     reply = await ai_service.generate_reply(
         message_text=message.text,

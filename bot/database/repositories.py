@@ -1,5 +1,6 @@
 from datetime import date, time, datetime, timedelta
-from sqlalchemy import select, and_, update, delete
+from sqlalchemy import select, and_, update, delete, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -333,53 +334,47 @@ class UserActivityRepository:
         bot_reply: bool = False,
         has_swear: bool = False,
     ):
-        result = await self.session.execute(
-            select(UserActivity).where(
-                and_(UserActivity.user_id == user_id, UserActivity.date == msg_date)
-            )
+        # Insert a new row or update atomically to avoid race conditions when
+        # multiple messages from the same user arrive concurrently.
+        stmt = pg_insert(UserActivity).values(
+            user_id=user_id,
+            username=username,
+            date=msg_date,
+            message_count=1,
+            total_chars=length,
+            short_count=0,
+            medium_count=0,
+            long_count=0,
+            media_count=0,
+            question_count=0,
+            reactions_received=0,
+            active_hours=str(hour),
+            bot_mentions=int(bot_mention),
+            bot_replies=int(bot_reply),
+            swear_count=int(has_swear),
+            mom_insult_count=0,
+            fire_reactions=0,
+            heart_reactions=0,
+        ).on_conflict_do_update(
+            constraint="user_activity_user_id_date_key",
+            set_={
+                "message_count": UserActivity.message_count + 1,
+                "total_chars": UserActivity.total_chars + length,
+                "bot_mentions": UserActivity.bot_mentions + int(bot_mention),
+                "bot_replies": UserActivity.bot_replies + int(bot_reply),
+                "swear_count": UserActivity.swear_count + int(has_swear),
+                # Merge the new hour into the stored comma-separated hours string.
+                # array_to_string(array(select distinct …)) keeps it duplicate-free.
+                "active_hours": text(
+                    "CASE WHEN user_activity.active_hours = '' THEN :hour "
+                    "WHEN user_activity.active_hours ~ ('(^|,)' || :hour || '(,|$)') "
+                    "     THEN user_activity.active_hours "
+                    "ELSE user_activity.active_hours || ',' || :hour END"
+                ).bindparams(hour=str(hour)),
+                "username": username if username else UserActivity.username,
+            },
         )
-        activity = result.scalar_one_or_none()
-
-        if activity is None:
-            activity = UserActivity(
-                user_id=user_id,
-                username=username,
-                date=msg_date,
-                message_count=0,
-                total_chars=0,
-                short_count=0,
-                medium_count=0,
-                long_count=0,
-                media_count=0,
-                question_count=0,
-                reactions_received=0,
-                active_hours="",
-                bot_mentions=0,
-                bot_replies=0,
-                swear_count=0,
-                mom_insult_count=0,
-                fire_reactions=0,
-                heart_reactions=0,
-            )
-            self.session.add(activity)
-
-        activity.message_count += 1
-        activity.total_chars += length
-        if bot_mention:
-            activity.bot_mentions += 1
-        if bot_reply:
-            activity.bot_replies += 1
-        if has_swear:
-            activity.swear_count += 1
-
-        hours = set(activity.active_hours.split(",")) if activity.active_hours else set()
-        hours.discard("")
-        hours.add(str(hour))
-        activity.active_hours = ",".join(sorted(hours, key=int))
-
-        if username:
-            activity.username = username
-
+        await self.session.execute(stmt)
         await self.session.commit()
 
     async def get_user_week_stats(self, user_id: int) -> dict:

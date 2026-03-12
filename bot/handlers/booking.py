@@ -1,3 +1,4 @@
+import asyncio
 import re
 from aiogram import Router, F
 from aiogram.types import Message
@@ -14,6 +15,14 @@ from bot.services.notifications import send_session_message, notify_promoted_use
 from bot.config import config
 
 router = Router()
+
+
+async def _auto_delete(bot, chat_id: int, message_id: int, delay: int = 20):
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
 
 
 @router.message(Command("start"))
@@ -153,11 +162,12 @@ async def cmd_book(message: Message):
         await _try_delete_message(message)
 
         # Skip game selection since we only have PUBG
-        await message.answer(
+        sent = await message.answer(
             "📅 Оберіть день:",
             reply_markup=day_selection_keyboard("pubg", message.from_user.id),
             disable_notification=True,
         )
+        asyncio.create_task(_auto_delete(message.bot, message.chat.id, sent.message_id))
 
 
 @router.message(Command("cancel"))
@@ -335,43 +345,43 @@ async def cmd_help(message: Message):
     await _try_delete_message(message)
 
     help_text = """
-🎮 *Бот для бронювання PUBG-слотів і аналітики чату*
+🎮 <b>Бот для бронювання PUBG-слотів і аналітики чату</b>
 
-*Бронювання:*
-• `/book` — Забронювати слот
-• `/book sat 18:00-22:00` — Швидке бронювання
-• `/edit sat 19:00-23:00` — Змінити час
-• `/cancel` — Скасувати бронювання
-• `/cancel sat` — Швидке скасування
-• `/status` — Хто грає
-• `/mystats` — Твоя статистика ігор
-• `/stats` — Статистика пацанів
+<b>Бронювання:</b>
+• <code>/book</code> — Забронювати слот
+• <code>/book sat 18:00-22:00</code> — Швидке бронювання
+• <code>/edit sat 19:00-23:00</code> — Змінити час
+• <code>/cancel</code> — Скасувати бронювання
+• <code>/cancel sat</code> — Швидке скасування
+• <code>/status</code> — Хто грає
+• <code>/mystats</code> — Твоя статистика ігор
+• <code>/stats</code> — Статистика пацанів
 
-*Аналітика та XP:*
-• `/stat` — Твоя активність за 7 днів + рівень і XP
-• `/stat @user` — Те саме для іншого учасника
-• `/ranking` — Рейтинг рівнів усіх учасників
-• `/levels` — Всі рівні та вимоги XP
-• `/top` — Лідерборд тижня з AI-коментарем
-• `/role @user` — AI призначає соціальну роль
-• `/vibe` — AI описує настрій чату зараз
+<b>Аналітика та XP:</b>
+• <code>/stat</code> — Твоя активність за 7 днів + рівень і XP
+• <code>/stat @user</code> — Те саме для іншого учасника
+• <code>/ranking</code> — Рейтинг рівнів усіх учасників
+• <code>/levels</code> — Всі рівні та вимоги XP
+• <code>/top</code> — Лідерборд тижня з AI-коментарем
+• <code>/role @user</code> — AI призначає соціальну роль
+• <code>/vibe</code> — AI описує настрій чату зараз
 
-*Адмін:*
-• `/open` — Відкрити бронювання
-• `/close` — Закрити бронювання
-• `/remove @username day` — Видалити бронювання
+<b>Адмін:</b>
+• <code>/open</code> — Відкрити бронювання
+• <code>/close</code> — Закрити бронювання
+• <code>/remove @username day</code> — Видалити бронювання
 
-*Дні:* sat / sun (або субота / неділя)
-*Час:* HH:MM-HH:MM · Часовий пояс: Europe/Warsaw 🇵🇱
+<b>Дні:</b> sat / sun (або субота / неділя)
+<b>Час:</b> HH:MM-HH:MM · Часовий пояс: Europe/Warsaw 🇵🇱
 
-*Автоматика:* Чт 18:00 відкриття · Нд 23:00 закриття · нагадування за 1 год
-*Авто-звіт:* Нд 21:00 — тижневий підсумок з AI
+<b>Автоматика:</b> Чт 18:00 відкриття · Нд 23:00 закриття · нагадування за 1 год
+<b>Авто-звіт:</b> Нд 21:00 — тижневий підсумок з AI
 
 /release_note — що нового · /help — ця довідка
 
 Єбаште і ніколи не здавайтесь!
 """
-    await message.answer(help_text, parse_mode="Markdown", disable_notification=True)
+    await message.answer(help_text, disable_notification=True)
 
 
 @router.message(Command("chatid"))

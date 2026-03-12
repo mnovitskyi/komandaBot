@@ -1,3 +1,4 @@
+import asyncio
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 
@@ -16,6 +17,14 @@ from bot.services.notifications import send_session_message, notify_promoted_use
 from bot.services.ai_chat import ai_service
 
 router = Router()
+
+
+async def _auto_delete(bot, chat_id: int, message_id: int, delay: int = 20):
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("book:day:"))
@@ -186,7 +195,7 @@ async def callback_quick_book(callback: CallbackQuery):
         if existing:
             from bot.utils.time_utils import format_time_range
             current_time = format_time_range(existing.time_from, existing.time_to)
-            await callback.message.answer(
+            sent = await callback.message.answer(
                 f"✏️ Ваше поточне бронювання: {current_time}\n"
                 "Оберіть новий час початку:",
                 reply_markup=edit_time_start_keyboard(
@@ -194,15 +203,17 @@ async def callback_quick_book(callback: CallbackQuery):
                 ),
                 disable_notification=True,
             )
+            asyncio.create_task(_auto_delete(callback.bot, callback.message.chat.id, sent.message_id))
             await callback.answer()
             return
 
     # Send time selection as a new message (will be deleted after booking)
-    await callback.message.answer(
+    sent = await callback.message.answer(
         "🕐 Оберіть час початку:",
         reply_markup=time_start_keyboard(game_name.lower(), day, callback.from_user.id),
         disable_notification=True,
     )
+    asyncio.create_task(_auto_delete(callback.bot, callback.message.chat.id, sent.message_id))
     await callback.answer()
 
 
@@ -398,11 +409,12 @@ async def callback_quick_cancel(callback: CallbackQuery):
             return
 
         day_name = get_day_name(day)
-        await callback.message.answer(
+        sent = await callback.message.answer(
             f"Скасувати бронювання {game_name} на {day_name}?",
             reply_markup=confirm_cancel_keyboard(session.id),
             disable_notification=True,
         )
+        asyncio.create_task(_auto_delete(callback.bot, callback.message.chat.id, sent.message_id))
 
     await callback.answer()
 
